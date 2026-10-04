@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="ja" data-theme="classic">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>スクール・オシロスコープ | 中学理科 音の実験アプリ</title>
+  <meta name="description" content="中学理科「音の性質」の実験で活用できるWebオシロスコープ。マイクの音をリアルタイムで視覚化し、振幅や振動数を学びます。">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- ======================================================================
+       アプリヘッダー
+       ====================================================================== -->
+  <header class="app-header">
+    <div class="app-title-group">
+      <h1 class="app-title">🔊 スクール・オシロスコープ</h1>
+      <span class="app-badge">中学理科 実験用</span>
+    </div>
+    <div class="header-actions">
+      <!-- リアルタイム同期ルーム状態バッジ（接続時のみ表示） -->
+      <button class="room-status-badge" id="roomStatusBadge" style="display: none;" title="タップしてルームから退出">
+        🟢 接続中: <span id="currentRoomText">#----</span>
+      </button>
+      <!-- 先生モード状態バッジ（ロック解除時に点灯） -->
+      <span class="teacher-mode-badge" id="teacherModeBadge" style="display: none;">👨‍🏫 先生モード中</span>
+      <!-- 先生用設定ボタン（ワンタップでコントロールパネルを開閉） -->
+      <button id="btnOpenTeacherAuth" class="btn-teacher-auth" title="先生専用の設定パネルを開きます">
+        ⚙️ 先生用設定
+      </button>
+    </div>
+  </header>
+
+  <!-- ======================================================================
+       メイン表示エリア
+       ====================================================================== -->
+  <main class="main-container">
+    <!-- ======================================================================
+         画面切り替えタブナビゲーション
+         ====================================================================== -->
+    <nav class="nav-tabs">
+      <button class="nav-tab active" data-tab="wave" id="tabBtnWave">
+        〰️ 波形観察・比較
+      </button>
+      <button class="nav-tab" data-tab="tuner" id="tabBtnTuner">
+        🎚️ 音の高さしらべ（チューナー）
+      </button>
+      <button class="nav-tab" data-tab="generator" id="tabBtnGenerator">
+        🔔 基準音を鳴らす（おんさ）
+      </button>
+    </nav>
+
+    <!-- ======================================================================
+         【タブ1】波形観察・比較画面
+         ====================================================================== -->
+    <section id="sectionWave" class="tab-pane active">
+      <div class="screen-wrapper">
+        <!-- オシロスコープ描画用Canvas -->
+        <canvas id="oscilloscopeCanvas"></canvas>
+
+        <!-- OSD（画面情報表示） -->
+        <div class="osd-overlay">
+          <div class="osd-badge osd-gain-badge" id="osdGain">GAIN: 1.0x</div>
+          <div class="osd-badge" id="osdWidth">WIDTH: 50マス</div>
+          <div class="osd-badge" id="osdTimeDiv">TIME: 1.0 ms/div</div>
+          <div class="osd-badge" id="osdVoltsDiv">VOLT: 0.5 V/div</div>
+          <div class="osd-badge" id="osdFreq">推定: --- Hz</div>
+        </div>
+
+
+        <!-- 初回マイク開始オーバーレイ -->
+        <div class="start-overlay" id="startOverlay">
+          <h2 style="font-size: 1.5rem; font-weight: 700; color: #ffffff;">音の実験をはじめよう！</h2>
+          <p style="color: #94a3b8; max-width: 440px; font-size: 0.95rem; line-height: 1.5;">
+            下のボタンを押すとマイクが有効になり、音の波形が画面に映し出されます。
+          </p>
+          <button id="btnStart" class="start-btn">
+            🎤 実験をはじめる（マイクをON）
+          </button>
+        </div>
+      </div>
+
+      <!-- 波形比較 ＆ 手動位相シフトパネル -->
+      <div class="compare-panel">
+        <!-- 音Aスロット -->
+        <div class="slot-card slot-a">
+          <div class="slot-header">
+            <span class="slot-badge badge-a">🔵 音A（基準）</span>
+            <span class="slot-status" id="statusA">未保存</span>
+          </div>
+          <div class="slot-actions">
+            <button id="btnSaveSlotA" class="btn-slot btn-slot-a" title="現在の音を音Aとして保存（何度でも上書きできます）">
+              📥 音Aを保存
+            </button>
+            <button id="btnClearSlotA" class="btn-slot-clear" title="音Aを消去" style="display: none;">
+              ✕
+            </button>
+          </div>
+        </div>
+
+        <!-- 音Bスロット -->
+        <div class="slot-card slot-b">
+          <div class="slot-header">
+            <span class="slot-badge badge-b">🔴 音B（比較）</span>
+            <span class="slot-status" id="statusB">未保存</span>
+          </div>
+          <div class="slot-actions">
+            <button id="btnSaveSlotB" class="btn-slot btn-slot-b" title="現在の音を音Bとして保存（何度でも上書きできます）">
+              📥 音Bを保存
+            </button>
+            <button id="btnClearSlotB" class="btn-slot-clear" title="音Bを消去" style="display: none;">
+              ✕
+            </button>
+          </div>
+        </div>
+
+        <!-- 比較表示モード切替（重ね合わせ / 上下に並べる） -->
+        <div class="compare-mode-group">
+          <span class="control-label">表示方法</span>
+          <div class="mode-toggle-buttons">
+            <button id="btnModeOverlay" class="btn-mode active" title="音Aと音Bを同じマス目に重ねて表示">重ね合わせ</button>
+            <button id="btnModeSplit" class="btn-mode" title="上段に音A、下段に音Bを並べて表示">上下に並べる</button>
+          </div>
+        </div>
+
+        <!-- 手動位相シフト（波の左右位置あわせ）バー -->
+        <div class="phase-shift-group" id="phaseShiftGroup">
+          <div class="phase-header">
+            <span class="control-label">波の位置あわせ（位相シフト）</span>
+            <span id="phaseValText" class="phase-val">0.0 ms</span>
+          </div>
+          <div class="phase-controls">
+            <button id="btnPhaseLeft" class="btn-phase-step" title="波を少し左に動かす">◀</button>
+            <input type="range" id="phaseSlider" class="phase-slider" min="-100" max="100" value="0" title="スライダーを動かして波の山と山をピッタリ重ねられます">
+            <button id="btnPhaseRight" class="btn-phase-step" title="波を少し右に動かす">▶</button>
+            <button id="btnPhaseReset" class="btn-phase-reset" title="最初の位置に戻す">リセット</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 操作コントロールバー -->
+      <div class="control-panel">
+        <div class="main-controls">
+          <button id="btnFreeze" class="btn-freeze" title="波形を止めて観察できます">
+            <span id="freezeIcon">⏸️</span>
+            <span id="freezeText">ピタッと停止</span>
+          </button>
+          <button id="btnSaveImage" class="btn-save" title="現在の画面を画像として保存します">
+            📸 画像を保存
+          </button>
+        </div>
+
+        <!-- 生徒画面用ノイズゲート（混入防止：生徒からも常時調整可能・初期値は先生指定値を継承） -->
+        <div class="student-gate-control">
+          <div class="gate-header">
+            <label for="noiseGateSlider" class="gate-label">🛡️ まわりの音カット（混入防止）</label>
+            <span id="gateValText" class="gate-val-badge">2%</span>
+          </div>
+          <div class="meter-container" title="赤い線の位置より大きい音だけを画面に映します">
+            <div id="meterFill" class="meter-fill"></div>
+            <div id="gateLine" class="gate-threshold-line" style="left: 2%;"></div>
+          </div>
+          <input type="range" id="noiseGateSlider" class="slider-input" min="0" max="30" value="2" title="スライダーを右に動かすと、まわりの小さな雑音を無視して自分の実験音だけをきれいに捉えます">
+        </div>
+
+        <!-- 生徒画面用パラメータエリア（初期状態では生徒から隠してシンプル化、先生モードで解放可能） -->
+        <div class="param-controls" id="studentParamControls" style="display: none;">
+          <div class="control-item">
+            <label for="timeDivSelect">時間の目盛り (TIME/DIV)</label>
+            <select id="timeDivSelect" class="select-box">
+              <option value="0.2">0.2 ms / 1マス</option>
+              <option value="0.5">0.5 ms / 1マス</option>
+              <option value="1.0" selected>1.0 ms / 1マス（標準）</option>
+              <option value="2.0">2.0 ms / 1マス</option>
+              <option value="5.0">5.0 ms / 1マス</option>
+              <option value="10.0">10.0 ms / 1マス</option>
+            </select>
+          </div>
+
+          <div class="control-item">
+            <label for="voltsDivSelect">高さの目盛り (VOLTS/DIV)</label>
+            <select id="voltsDivSelect" class="select-box">
+              <option value="0.1">0.1 V / 1マス（大）</option>
+              <option value="0.2">0.2 V / 1マス</option>
+              <option value="0.5" selected>0.5 V / 1マス（標準）</option>
+              <option value="1.0">1.0 V / 1マス（小）</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================================================================
+         【タブ2】音の高さしらべ（チューナー画面）
+         ====================================================================== -->
+    <section id="sectionTuner" class="tab-pane" style="display: none;">
+      <div class="tuner-container">
+        <!-- 音名・周波数表示カード -->
+        <div class="tuner-card">
+          <div class="tuner-note-display">
+            <div class="note-solfege" id="tunerSolfege">---</div>
+            <div class="note-name" id="tunerNoteName">音を出してね</div>
+          </div>
+          <div class="tuner-freq-display">
+            <span class="freq-label">実測の高さ:</span>
+            <span class="freq-val" id="tunerFrequency">--- Hz</span>
+            <span class="freq-standard" id="tunerStandardFreq">（基準: --- Hz）</span>
+          </div>
+
+          <!-- チューニングメーター（針・目盛り・セント表示） -->
+          <div class="meter-gauge-wrapper">
+            <div class="gauge-scale">
+              <span>-50</span>
+              <span>-25</span>
+              <span class="center-mark">▼ ピッタリ ▼</span>
+              <span>+25</span>
+              <span>+50</span>
+            </div>
+            <div class="gauge-track">
+              <div class="gauge-center-zone"></div>
+              <div class="gauge-needle" id="tunerNeedle" style="left: 50%;"></div>
+            </div>
+            <div class="gauge-cents" id="tunerCents">0 セント</div>
+          </div>
+
+          <!-- アドバイスメッセージ -->
+          <div class="tuner-status-msg" id="tunerStatusMsg">
+            マイクに向かって声を出したり、モノコードを弾いてみよう！
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================================================================
+         【タブ3】基準音の再生画面（おんさ・トーンジェネレーター）
+         ====================================================================== -->
+    <section id="sectionGenerator" class="tab-pane" style="display: none;">
+      <div class="generator-container">
+        <!-- 音を鳴らすメインコントロールカード -->
+        <div class="generator-card">
+          <h2 class="gen-title">🔔 基準音を鳴らしてみよう</h2>
+          <p class="gen-desc">おんさや楽器の基準となるきれいな音をスピーカーから鳴らして、音の高さや波の形を確かめられます。</p>
+
+          <!-- ワンタップおんさボタン -->
+          <div class="preset-group">
+            <span class="gen-label">よく使う基準音（ワンタップ）:</span>
+            <div class="preset-buttons">
+              <button class="btn-preset active" data-freq="440" data-note="ラ (A4)">標準のおんさ: 440 Hz (ラ)</button>
+              <button class="btn-preset" data-freq="880" data-note="高いラ (A5)">高いおんさ: 880 Hz (高いラ)</button>
+              <button class="btn-preset" data-freq="261.6" data-note="ド (C4)">基本の音: 261.6 Hz (ド)</button>
+              <button class="btn-preset" data-freq="523.3" data-note="高いド (C5)">高いド: 523.3 Hz (高いド)</button>
+            </div>
+          </div>
+
+          <!-- 周波数・スライダー調整 -->
+          <div class="freq-control-group">
+            <div class="freq-display-box">
+              <span class="gen-label">現在の周波数:</span>
+              <span class="gen-freq-number" id="genFreqDisplay">440.0 Hz</span>
+              <span class="gen-note-label" id="genNoteDisplay">(ラ / A4)</span>
+            </div>
+            <input type="range" id="genFreqSlider" class="gen-slider" min="100" max="1500" value="440" step="1">
+            <div class="slider-ticks">
+              <span>100 Hz (低い)</span>
+              <span>440 Hz (標準)</span>
+              <span>1500 Hz (高い)</span>
+            </div>
+          </div>
+
+          <!-- 波形タイプ選択（音色の実験） -->
+          <div class="wave-type-group">
+            <span class="gen-label">波の形（音色を選べるよ）:</span>
+            <div class="wave-chips">
+              <button class="chip-wave active" data-type="sine">〰️ サイン波（おんさ）</button>
+              <button class="chip-wave" data-type="square">⏹️ 矩形波（電子音）</button>
+              <button class="chip-wave" data-type="sawtooth">📐 ノコギリ波（弦楽器風）</button>
+              <button class="chip-wave" data-type="triangle">🔺 三角波（柔らかい音）</button>
+            </div>
+          </div>
+
+          <!-- 再生・停止アクション -->
+          <div class="gen-actions">
+            <button id="btnToggleTone" class="btn-gen-play">
+              <span id="tonePlayIcon">▶️</span>
+              <span id="tonePlayText">音を鳴らす</span>
+            </button>
+            <button id="btnLoopback" class="btn-loopback" title="スピーカーを鳴らさずに、タブ1のオシロスコープに綺麗な波を直接映します">
+              🔀 波形観察タブでこの音を見る
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ======================================================================
+       画像保存モーダルダイアログ（自由記述入力）
+       ====================================================================== -->
+  <div class="modal-overlay" id="saveModal">
+    <div class="modal-card">
+      <h3 class="modal-title">📸 実験データの保存</h3>
+      <p style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.4;">
+        画像に印字する名前と実験の条件を入力してください。
+      </p>
+
+      <!-- 質問1: なまえ -->
+      <div class="modal-form-group">
+        <label for="inputStudentName" class="modal-label">Q1. なまえ（クラス・出席番号・氏名）<span style="color: #ef4444;">*</span></label>
+        <input type="text" id="inputStudentName" class="modal-input" placeholder="例: 1年2組5番 佐藤 太郎" autocomplete="off">
+        <span class="modal-alert" id="alertName">※ なまえを入力してください</span>
+      </div>
+
+      <!-- 質問2: 実験の条件 -->
+      <div class="modal-form-group">
+        <label for="inputExperimentCond" class="modal-label">Q2. 実験の条件（音の出し方・器具のようすなど）<span style="color: #ef4444;">*</span></label>
+        <input type="text" id="inputExperimentCond" class="modal-input" placeholder="例: おんさを強く叩いた / 弦の長さを20cmにした" autocomplete="off">
+        <span class="modal-alert" id="alertCond">※ 実験の条件を入力してください</span>
+      </div>
+
+      <!-- モーダル操作ボタン -->
+      <div class="modal-actions">
+        <button id="btnCancelModal" class="btn-secondary">キャンセル</button>
+        <button id="btnConfirmSave" class="btn-primary">画像を保存する</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================================================================
+       先生用パスコード認証モーダル
+       ====================================================================== -->
+  <div class="modal-overlay" id="teacherAuthModal">
+    <div class="modal-card modal-auth-card">
+      <div class="modal-auth-icon">🔒</div>
+      <h3 class="modal-title">先生専用コントロール</h3>
+      <p style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.4; text-align: center;">
+        先生用パスコード（4桁）を入力してください。<br>
+        <span style="font-size: 0.78rem; color: var(--text-muted);">※初期パスコード: <code>0000</code></span>
+      </p>
+
+      <div class="modal-form-group" style="text-align: center; margin-top: 1rem;">
+        <input type="password" id="inputTeacherPasscode" class="passcode-input" maxlength="4" placeholder="••••" autocomplete="off" inputmode="numeric">
+        <span class="modal-alert" id="alertTeacherAuth" style="text-align: center;">※ パスコードが正しくありません</span>
+      </div>
+
+      <div class="modal-actions">
+        <button id="btnCancelTeacherAuth" class="btn-secondary">戻る</button>
+        <button id="btnSubmitTeacherAuth" class="btn-primary">解除する</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================================================================
+       先生専用コントロールパネル（モーダル）
+       ====================================================================== -->
+  <div class="modal-overlay" id="teacherPanelModal">
+    <div class="modal-card modal-teacher-panel">
+      <div class="teacher-panel-header">
+        <div>
+          <h3 class="modal-title" style="margin-bottom: 2px;">👨‍🏫 先生用コントロールパネル</h3>
+          <span style="font-size: 0.8rem; color: var(--text-muted);">生徒画面のパラメータや実験条件を一括管理します</span>
+        </div>
+        <button id="btnCloseTeacherPanel" class="btn-modal-close" title="閉じる">✕</button>
+      </div>
+
+      <div class="teacher-panel-body">
+        <!-- 0. 生徒配布用 設定リンク生成（URLパラメータ方式・パスコード/QR不要） -->
+        <div class="t-section t-share-section">
+          <div class="t-share-header">
+            <span class="t-share-badge">🚀 おすすめ・最速</span>
+            <label class="t-section-label" style="margin-bottom: 0;">📋 生徒用配布リンク（URL共有）</label>
+          </div>
+          <p class="t-section-desc" style="margin-bottom: 10px;">
+            生徒はこのリンクを開くだけで、先生が調整した設定（ゲイン・横幅・目盛り・テーマ等）のまま即座に起動します。パスコードやQR読み取りの手間は一切ありません。
+          </p>
+          <div class="share-action-box">
+            <button id="btnCopyCurrentConfigLink" class="btn-copy-link" title="現在の設定を反映した生徒用URLをクリップボードにコピー">
+              <span class="btn-copy-icon">📋</span>
+              <span class="btn-copy-text">この設定の生徒用リンクをコピー</span>
+            </button>
+            <div class="share-url-preview-wrapper">
+              <input type="text" id="shareUrlPreview" class="share-url-preview" readonly placeholder="設定URLがここに生成されます">
+            </div>
+          </div>
+        </div>
+
+        <!-- 1. 授業シーン別ワンタッププリセット -->
+        <div class="t-section">
+          <label class="t-section-label">⚡ 授業シーン別おすすめセット（ワンタップ適用 / リンク生成）</label>
+          <div class="scene-preset-grid">
+            <div class="scene-preset-card">
+              <button class="btn-scene-preset" data-preset="tuning-fork">
+                <span class="scene-icon">🔔</span>
+                <span class="scene-title">おんさの実験</span>
+                <span class="scene-detail">ゲイン: ×5.0 / 横: 20マス / 0.5ms</span>
+              </button>
+              <button class="btn-preset-link-copy" data-preset="tuning-fork" title="おんさ実験用リンクを直接コピー">🔗 リンクをコピー</button>
+            </div>
+            <div class="scene-preset-card">
+              <button class="btn-scene-preset" data-preset="voice">
+                <span class="scene-icon">🗣️</span>
+                <span class="scene-title">声・歌声の観察</span>
+                <span class="scene-detail">ゲイン: ×1.0 / 横: 50マス / 2.0ms</span>
+              </button>
+              <button class="btn-preset-link-copy" data-preset="voice" title="声観察用リンクを直接コピー">🔗 リンクをコピー</button>
+            </div>
+            <div class="scene-preset-card">
+              <button class="btn-scene-preset" data-preset="monochord">
+                <span class="scene-icon">🎸</span>
+                <span class="scene-title">弦・モノコード</span>
+                <span class="scene-detail">ゲイン: ×2.0 / 横: 30マス / 1.0ms</span>
+              </button>
+              <button class="btn-preset-link-copy" data-preset="monochord" title="モノコード用リンクを直接コピー">🔗 リンクをコピー</button>
+            </div>
+            <div class="scene-preset-card">
+              <button class="btn-scene-preset" data-preset="loud">
+                <span class="scene-icon">🥁</span>
+                <span class="scene-title">大音量・打楽器</span>
+                <span class="scene-detail">ゲイン: ×0.5 / 横: 50マス / 5.0ms</span>
+              </button>
+              <button class="btn-preset-link-copy" data-preset="loud" title="打楽器用リンクを直接コピー">🔗 リンクをコピー</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. マイク感度・波形ゲイン設定 -->
+        <div class="t-section">
+          <div class="t-section-header">
+            <label class="t-section-label">🔊 マイク感度・波形ゲイン（Gain）</label>
+            <span class="t-value-badge" id="teacherGainBadge">×1.0（標準）</span>
+          </div>
+          <p class="t-section-desc">小さな実験音（おんさの減衰音など）を拡大して画面いっぱいに映します。</p>
+          
+          <div class="gain-quick-buttons">
+            <button class="btn-gain-quick" data-gain="0.5">×0.5 (小)</button>
+            <button class="btn-gain-quick active" data-gain="1.0">×1.0 (標準)</button>
+            <button class="btn-gain-quick" data-gain="2.0">×2.0 (倍)</button>
+            <button class="btn-gain-quick" data-gain="5.0">×5.0 (おんさ)</button>
+            <button class="btn-gain-quick" data-gain="10.0">×10.0 (微小)</button>
+          </div>
+
+          <div class="gain-slider-wrapper">
+            <input type="range" id="teacherGainSlider" class="slider-input" min="0.5" max="10.0" step="0.5" value="1.0">
+            <div class="slider-ticks">
+              <span>0.5倍</span>
+              <span>1.0倍</span>
+              <span>5.0倍</span>
+              <span>10.0倍</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. 波の表示幅（横マス数）設定 -->
+        <div class="t-section">
+          <div class="t-section-header">
+            <label class="t-section-label">↔️ 波の表示幅（横マス数）</label>
+            <span class="t-value-badge" id="teacherWidthBadge">50マス（標準）</span>
+          </div>
+          <p class="t-section-desc">画面全体の横マス数を調整します。10マスや20マスにすると、波が大きく拡大されて1〜2周期だけを観察・スケッチしやすくなります（音A・音Bの両方に作用）。</p>
+          
+          <div class="width-quick-buttons">
+            <button class="btn-width-quick" data-width="10">10マス (大拡大)</button>
+            <button class="btn-width-quick" data-width="20">20マス (2〜3周期)</button>
+            <button class="btn-width-quick" data-width="30">30マス</button>
+            <button class="btn-width-quick" data-width="40">40マス</button>
+            <button class="btn-width-quick active" data-width="50">50マス (標準)</button>
+          </div>
+        </div>
+
+        <!-- 4. オシロスコープ目盛り設定 -->
+        <div class="t-section">
+          <label class="t-section-label">📐 オシロスコープ目盛り設定</label>
+          <div class="t-grid-two">
+            <div class="t-field">
+              <label for="teacherTimeDivSelect" class="t-sublabel">時間の目盛り (TIME/DIV)</label>
+              <select id="teacherTimeDivSelect" class="select-box">
+                <option value="0.2">0.2 ms / 1マス</option>
+                <option value="0.5">0.5 ms / 1マス</option>
+                <option value="1.0" selected>1.0 ms / 1マス（標準）</option>
+                <option value="2.0">2.0 ms / 1マス</option>
+                <option value="5.0">5.0 ms / 1マス</option>
+                <option value="10.0">10.0 ms / 1マス</option>
+              </select>
+            </div>
+            <div class="t-field">
+              <label for="teacherVoltsDivSelect" class="t-sublabel">高さの目盛り (VOLTS/DIV)</label>
+              <select id="teacherVoltsDivSelect" class="select-box">
+                <option value="0.1">0.1 V / 1マス（大）</option>
+                <option value="0.2">0.2 V / 1マス</option>
+                <option value="0.5" selected>0.5 V / 1マス（標準）</option>
+                <option value="1.0">1.0 V / 1マス（小）</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- 4. 騒音混入防止（ノイズゲート） -->
+        <div class="t-section">
+          <div class="t-section-header">
+            <label class="t-section-label">🛡️ 教室の騒音混入防止（ノイズゲート）</label>
+            <span class="t-value-badge" id="teacherGateValText">2%</span>
+          </div>
+          <p class="t-section-desc">隣の班の話し声をカットし、実験音だけをきれいに捉えます。</p>
+          <div class="meter-container" style="height: 18px; margin-bottom: 8px;">
+            <div id="teacherMeterFill" class="meter-fill"></div>
+            <div id="teacherGateLine" class="gate-threshold-line" style="left: 2%;"></div>
+          </div>
+          <input type="range" id="teacherGateSlider" class="slider-input" min="0" max="50" value="2">
+        </div>
+
+        <!-- 5. カラーテーマ設定（10種類） -->
+        <div class="t-section">
+          <label for="teacherThemeSelect" class="t-section-label">🎨 画面のカラーテーマ（10種類）</label>
+          <select id="teacherThemeSelect" class="select-box" style="width: 100%;">
+            <option value="classic">① クラシック（黒×緑）</option>
+            <option value="cyan">② サイバー・シアン</option>
+            <option value="medical">③ 心電図（メディカル）</option>
+            <option value="paper">④ ノート方眼紙（白×青）</option>
+            <option value="amber">⑤ レトロ・アンバー</option>
+            <option value="chalkboard">⑥ 黒板・チョーク（学校風）</option>
+            <option value="highcontrast">⑦ 高コントラスト（UD）</option>
+            <option value="monochrome">⑧ 白黒モノクロ（印刷用）</option>
+            <option value="sunset">⑨ サンセット・ウォーム</option>
+            <option value="violet">⑩ フューチャー・バイオレット</option>
+          </select>
+        </div>
+
+        <!-- 6. 生徒画面のロック解放トグル -->
+        <div class="t-section t-section-toggle">
+          <div class="toggle-info">
+            <span class="toggle-title">生徒画面にも詳細設定を表示する</span>
+            <span class="toggle-desc">ONにすると、生徒画面の下部にもTIME/DIVやゲートのスライダーが表示されます。</span>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="chkUnlockStudentControls">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+
+        <!-- 7. 授業ルーム・リアルタイム一斉同期 -->
+        <div class="t-section">
+          <label class="t-section-label">📡 授業ルーム・全生徒端末へ一斉同期</label>
+          <p class="t-section-desc">先生が設定したテーマ・ゲイン・目盛り・横マス数を全生徒のChromebook/iPadへ0.1秒で即時配信します。</p>
+          
+          <div id="roomInitialArea" style="display: block;">
+            <button id="btnStartRoom" class="btn-primary" style="width: 100%; padding: 12px; font-size: 0.95rem;">
+              🚀 授業ルームを開始する（番号・QRコード発行）
+            </button>
+          </div>
+
+          <div id="roomActiveArea" style="display: none; background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 12px; padding: 14px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <span style="font-weight: 700; color: #10b981; font-size: 0.9rem;">🟢 ルーム配信中</span>
+              <span id="teacherRoomCodeDisplay" style="font-size: 1.4rem; font-weight: 900; letter-spacing: 0.1em; color: var(--text-main); background: var(--bg-panel); padding: 4px 12px; border-radius: 8px; border: 1px solid var(--border-color);">#----</span>
+            </div>
+            <p style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 10px;">
+              先生がパネルの設定を変更すると、生徒画面へ自動でプッシュ同期されます（生徒の一時停止波形は保護されます）。
+            </p>
+            <div style="display: flex; gap: 8px;">
+              <button id="btnShowQRModal" class="btn-primary" style="flex: 2; padding: 8px 12px; font-size: 0.85rem;">
+                📲 参加用QRコードを表示（黒板・プロジェクター用）
+              </button>
+              <button id="btnCloseRoom" class="btn-secondary" style="flex: 1; padding: 8px 12px; font-size: 0.85rem;">
+                終了
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 8. パスコード変更 -->
+        <div class="t-section" style="padding: 12px 16px;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <span style="font-size: 0.85rem; font-weight: 700; color: var(--text-main);">🔑 先生用パスコードの変更</span>
+              <span style="font-size: 0.75rem; color: var(--text-muted); display: block;">初期値 0000 から好きな4桁に変更可能</span>
+            </div>
+            <div style="display: flex; gap: 6px;">
+              <input type="password" id="inputNewPasscode" class="passcode-input" maxlength="4" placeholder="新4桁" style="width: 80px; padding: 6px; font-size: 1rem; letter-spacing: 0.2em;">
+              <button id="btnSaveNewPasscode" class="btn-secondary" style="padding: 6px 10px; font-size: 0.8rem;">保存</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- パネルフッター -->
+      <div class="teacher-panel-footer">
+        <button id="btnLockTeacherMode" class="btn-secondary" title="先生モードを終了して再びパスコードで保護します">
+          🔒 先生モードを終了（再施錠）
+        </button>
+        <button id="btnApplyTeacherSettings" class="btn-primary">
+          ✓ 設定を完了して閉じる
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================================================================
+       生徒用ルーム参加モーダル
+       ====================================================================== -->
+  <div class="modal-overlay" id="joinRoomModal">
+    <div class="modal-card modal-auth-card">
+      <div class="modal-auth-icon">📡</div>
+      <h3 class="modal-title">授業ルームに入る</h3>
+      <p style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.4; text-align: center;">
+        黒板やプロジェクターに表示されている<br>
+        <strong>4桁のルーム番号</strong>を入力してください。
+      </p>
+
+      <div class="modal-form-group" style="text-align: center; margin-top: 1rem;">
+        <input type="text" id="inputJoinRoomCode" class="passcode-input" maxlength="4" placeholder="例: A739" autocomplete="off" style="text-transform: uppercase;">
+        <span class="modal-alert" id="alertJoinRoom" style="text-align: center;">※ 4桁の番号を入力してください</span>
+      </div>
+
+      <div class="modal-actions">
+        <button id="btnCancelJoinRoom" class="btn-secondary">戻る</button>
+        <button id="btnSubmitJoinRoom" class="btn-primary">参加する</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================================================================
+       プロジェクター投影用 大画面QRコードモーダル
+       ====================================================================== -->
+  <div class="modal-overlay" id="qrModal">
+    <div class="modal-card" style="max-width: 440px; text-align: center; padding: 24px;">
+      <h3 class="modal-title" style="font-size: 1.3rem;">📲 授業ルームに参加しよう</h3>
+      <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 14px;">
+        端末のカメラでQRコードを読み取るか、部屋番号を入力してください。
+      </p>
+
+      <!-- QRコード描画用Canvas（中央配置） -->
+      <div style="background: #ffffff; padding: 16px; border-radius: 16px; display: inline-block; box-shadow: 0 4px 20px rgba(0,0,0,0.3); margin-bottom: 14px;">
+        <canvas id="qrCanvas" style="display: block; width: 220px; height: 220px;"></canvas>
+      </div>
+
+      <div style="background: var(--bg-canvas); border: 1px solid var(--border-color); border-radius: 10px; padding: 10px; margin-bottom: 16px;">
+        <span style="font-size: 0.8rem; color: var(--text-muted); display: block;">部屋番号（手入力用）:</span>
+        <span id="qrRoomCodeText" style="font-size: 2rem; font-weight: 900; letter-spacing: 0.15em; color: #10b981;">#----</span>
+      </div>
+
+      <button id="btnCloseQRModal" class="btn-primary" style="width: 100%; padding: 12px;">
+        閉じる
+      </button>
+    </div>
+  </div>
+
+  <!-- ======================================================================
+       マイク許可トラブルシューティング・ガイドモーダル
+       ====================================================================== -->
+  <div class="modal-overlay" id="micGuideModal">
+    <div class="modal-card" style="max-width: 500px; text-align: left; padding: 24px;">
+      <div style="text-align: center; margin-bottom: 12px;">
+        <span style="font-size: 2.8rem;">🎤❌</span>
+        <h3 class="modal-title" style="margin-top: 6px;">マイクがブロックされています</h3>
+        <p style="font-size: 0.85rem; color: var(--text-muted);">
+          音の波形を見るにはマイクの許可が必要です。お使いの端末の手順で許可してください。
+        </p>
+      </div>
+
+      <div style="background: var(--bg-panel); border: 1px solid var(--border-color); border-radius: 12px; padding: 14px; margin-bottom: 12px;">
+        <span style="font-weight: 700; color: #38bdf8; font-size: 0.9rem; display: block; margin-bottom: 4px;">💻 Chromebook / パソコン (Chrome) の場合:</span>
+        <ol style="font-size: 0.82rem; color: var(--text-main); margin: 0; padding-left: 20px; line-height: 1.5;">
+          <li>画面上のURL（アドレスバー）の左側にある<strong>「鍵アイコン 🔒」</strong>を押します。</li>
+          <li>「マイク」の項目を<strong>「許可」</strong>に切り替えます。</li>
+          <li>ページを再読み込み（F5キー）します。</li>
+        </ol>
+      </div>
+
+      <div style="background: var(--bg-panel); border: 1px solid var(--border-color); border-radius: 12px; padding: 14px; margin-bottom: 18px;">
+        <span style="font-weight: 700; color: #10b981; font-size: 0.9rem; display: block; margin-bottom: 4px;">📱 iPad / iPhone (Safari) の場合:</span>
+        <ol style="font-size: 0.82rem; color: var(--text-main); margin: 0; padding-left: 20px; line-height: 1.5;">
+          <li>アドレスバー左側の<strong>「ぁあ」</strong>または「aA」アイコンを押します。</li>
+          <li>「Webサイトの設定」を開き、「マイク」を<strong>「許可」</strong>にします。</li>
+          <li>ページを更新します。</li>
+        </ol>
+      </div>
+
+      <div class="modal-actions">
+        <button id="btnCloseMicGuide" class="btn-secondary">閉じる</button>
+        <button id="btnRetryMic" class="btn-primary">もう一度マイクを試す</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- クリップボードコピー等のトースト通知（画面上部） -->
+  <div id="toastNotification" class="toast-notification" role="status" aria-live="polite"></div>
+
+  <!-- QRコード生成エンジン（完全オフライン・スタンドアロン） -->
+  <script src="js/qrcode.js"></script>
+  <!-- メインスクリプト（ES Modules） -->
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,1873 @@
+/* ==========================================================================
+   スクール・オシロスコープ (School Oscilloscope) - メインスタイルシート
+   ==========================================================================
+   【設計方針】
+   - GIGAスクール端末（Chromebook、iPad）で直感的に操作できる大きなタップエリア
+   - 10種類のカラーテーマ（CSS変数）で即座に切り替え可能
+   - 明るい理科室でも暗い教室でも視認性を保つコントラスト設計
+   ========================================================================== */
+
+/* --- 1. カラーテーマ定義（10種類） --- */
+/* ① オシロスコープ・クラシック（初期デフォルト）: 伝統的な漆黒×蛍光グリーン */
+:root, [data-theme="classic"] {
+  --bg-primary: #0a0f1d;
+  --bg-panel: #111827;
+  --bg-canvas: #060a12;
+  --border-color: #1f2937;
+  --text-main: #f9fafb;
+  --text-muted: #9ca3af;
+  --accent-color: #22c55e;
+  --accent-glow: rgba(34, 197, 94, 0.4);
+  --grid-line: rgba(34, 197, 94, 0.15);
+  --grid-subline: rgba(34, 197, 94, 0.06);
+  --center-line: rgba(34, 197, 94, 0.4);
+  --wave-main: #22c55e;
+  --wave-compare: #f97316;
+}
+
+/* ② サイバー・シアン: 最も視認性が高く生徒が引き込まれるネオンブルー */
+[data-theme="cyan"] {
+  --bg-primary: #080e1a;
+  --bg-panel: #0f172a;
+  --bg-canvas: #040711;
+  --border-color: #1e293b;
+  --text-main: #f8fafc;
+  --text-muted: #94a3b8;
+  --accent-color: #00f0ff;
+  --accent-glow: rgba(0, 240, 255, 0.4);
+  --grid-line: rgba(0, 240, 255, 0.15);
+  --grid-subline: rgba(0, 240, 255, 0.05);
+  --center-line: rgba(0, 240, 255, 0.35);
+  --wave-main: #00f0ff;
+  --wave-compare: #f43f5e;
+}
+
+/* ③ メディカル・グリーン（心電図）: 薄緑背景に濃いエメラルド波形。明るい教室に最適 */
+[data-theme="medical"] {
+  --bg-primary: #eef7ee;
+  --bg-panel: #ffffff;
+  --bg-canvas: #e8f5e9;
+  --border-color: #c8e6c9;
+  --text-main: #1b5e20;
+  --text-muted: #2e7d32;
+  --accent-color: #1b5e20;
+  --accent-glow: rgba(27, 94, 32, 0.2);
+  --grid-line: rgba(46, 125, 50, 0.25);
+  --grid-subline: rgba(46, 125, 50, 0.1);
+  --center-line: rgba(46, 125, 50, 0.45);
+  --wave-main: #1b5e20;
+  --wave-compare: #b71c1c;
+}
+
+/* ④ ノート・方眼紙（ライト）: 生徒の理科ノート・ワークシートと同一の見た目 */
+[data-theme="paper"] {
+  --bg-primary: #f8fafc;
+  --bg-panel: #ffffff;
+  --bg-canvas: #ffffff;
+  --border-color: #e2e8f0;
+  --text-main: #0f172a;
+  --text-muted: #64748b;
+  --accent-color: #1d4ed8;
+  --accent-glow: rgba(29, 78, 216, 0.2);
+  --grid-line: rgba(59, 130, 246, 0.2);
+  --grid-subline: rgba(59, 130, 246, 0.08);
+  --center-line: rgba(59, 130, 246, 0.4);
+  --wave-main: #1d4ed8;
+  --wave-compare: #dc2626;
+}
+
+/* ⑤ レトロ・アンバー: 真空管オシロスコープ風の温かみのある琥珀色 */
+[data-theme="amber"] {
+  --bg-primary: #140d07;
+  --bg-panel: #1f140a;
+  --bg-canvas: #0d0804;
+  --border-color: #3d2411;
+  --text-main: #fed7aa;
+  --text-muted: #b45309;
+  --accent-color: #f97316;
+  --accent-glow: rgba(249, 115, 22, 0.4);
+  --grid-line: rgba(249, 115, 22, 0.15);
+  --grid-subline: rgba(249, 115, 22, 0.06);
+  --center-line: rgba(249, 115, 22, 0.35);
+  --wave-main: #f97316;
+  --wave-compare: #38bdf8;
+}
+
+/* ⑥ 黒板・チョーク（学校風）: 教室の黒板になじむスクールグリーン */
+[data-theme="chalkboard"] {
+  --bg-primary: #15261b;
+  --bg-panel: #1f3828;
+  --bg-canvas: #1b3323;
+  --border-color: #2c4e38;
+  --text-main: #fef08a;
+  --text-muted: #86efac;
+  --accent-color: #fde047;
+  --accent-glow: rgba(253, 224, 71, 0.3);
+  --grid-line: rgba(255, 255, 255, 0.18);
+  --grid-subline: rgba(255, 255, 255, 0.06);
+  --center-line: rgba(255, 255, 255, 0.35);
+  --wave-main: #fde047;
+  --wave-compare: #ffffff;
+}
+
+/* ⑦ ハイコントラスト・CUD: 色覚多様性（色弱の生徒）に配慮したUD高コントラスト */
+[data-theme="highcontrast"] {
+  --bg-primary: #000000;
+  --bg-panel: #121212;
+  --bg-canvas: #000000;
+  --border-color: #4b5563;
+  --text-main: #ffffff;
+  --text-muted: #d1d5db;
+  --accent-color: #ffff00;
+  --accent-glow: rgba(255, 255, 0, 0.5);
+  --grid-line: rgba(255, 255, 255, 0.25);
+  --grid-subline: rgba(255, 255, 255, 0.1);
+  --center-line: rgba(255, 255, 255, 0.5);
+  --wave-main: #ffff00;
+  --wave-compare: #00e5ff;
+}
+
+/* ⑧ ペーパー・モノクロ: 白黒プリント印刷や提出物キャプチャ用 */
+[data-theme="monochrome"] {
+  --bg-primary: #ffffff;
+  --bg-panel: #f3f4f6;
+  --bg-canvas: #ffffff;
+  --border-color: #d1d5db;
+  --text-main: #111827;
+  --text-muted: #4b5563;
+  --accent-color: #111827;
+  --accent-glow: rgba(17, 24, 39, 0.15);
+  --grid-line: rgba(0, 0, 0, 0.2);
+  --grid-subline: rgba(0, 0, 0, 0.06);
+  --center-line: rgba(0, 0, 0, 0.4);
+  --wave-main: #000000;
+  --wave-compare: #64748b;
+}
+
+/* ⑨ サンセット・ウォーム: ブルーライトを抑えた目に優しいアイボリー×テラコッタ */
+[data-theme="sunset"] {
+  --bg-primary: #fdfbf7;
+  --bg-panel: #f5eedb;
+  --bg-canvas: #faf6eb;
+  --border-color: #e6dac1;
+  --text-main: #431407;
+  --text-muted: #78350f;
+  --accent-color: #c2410c;
+  --accent-glow: rgba(194, 65, 12, 0.2);
+  --grid-line: rgba(120, 53, 15, 0.2);
+  --grid-subline: rgba(120, 53, 15, 0.07);
+  --center-line: rgba(120, 53, 15, 0.4);
+  --wave-main: #c2410c;
+  --wave-compare: #1e40af;
+}
+
+/* ⑩ フューチャー・バイオレット: 暗紫色×ネオンピンクのモダンで洗練されたスタイル */
+[data-theme="violet"] {
+  --bg-primary: #12091f;
+  --bg-panel: #1e1035;
+  --bg-canvas: #0a0414;
+  --border-color: #3b1d6b;
+  --text-main: #fdf2f8;
+  --text-muted: #d8b4fe;
+  --accent-color: #f43f5e;
+  --accent-glow: rgba(244, 63, 94, 0.4);
+  --grid-line: rgba(216, 180, 254, 0.15);
+  --grid-subline: rgba(216, 180, 254, 0.05);
+  --center-line: rgba(216, 180, 254, 0.35);
+  --wave-main: #f43f5e;
+  --wave-compare: #06b6d4;
+}
+
+/* --- 2. 基本リセットとベース設定 --- */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Hiragino Sans", "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;
+  background-color: var(--bg-primary);
+  color: var(--text-main);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow-x: hidden;
+  transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+/* --- 3. アプリヘッダー --- */
+.app-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 16px;
+  background-color: var(--bg-panel);
+  border-bottom: 1px solid var(--border-color);
+  z-index: 10;
+}
+
+.app-title-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.app-title {
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--text-main);
+}
+
+.app-badge {
+  font-size: 0.75rem;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  background-color: var(--accent-color);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* --- 4. メインコンテンツ配置 --- */
+.main-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+  max-width: 1400px;
+  margin: 0 auto;
+  width: 100%;
+  gap: 12px;
+}
+
+/* --- 5. オシロスコープ表示エリア --- */
+.screen-wrapper {
+  position: relative;
+  width: 100%;
+  background-color: var(--bg-canvas);
+  border: 2px solid var(--border-color);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  aspect-ratio: 16 / 9;
+  min-height: 280px;
+  max-height: 65vh;
+}
+
+#oscilloscopeCanvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* OSD（画面情報表示） */
+.osd-overlay {
+  position: absolute;
+  top: 10px;
+  left: 12px;
+  right: 12px;
+  display: flex;
+  justify-content: space-between;
+  pointer-events: none;
+  font-family: "Courier New", Courier, monospace, monospace;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--accent-color);
+  text-shadow: 0 0 6px var(--accent-glow);
+  z-index: 2;
+}
+
+.osd-badge {
+  background-color: rgba(0, 0, 0, 0.6);
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border-color);
+}
+
+.freeze-indicator {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background-color: rgba(220, 38, 38, 0.85);
+  color: #ffffff;
+  font-size: 1.4rem;
+  font-weight: 800;
+  padding: 8px 24px;
+  border-radius: 8px;
+  border: 2px solid #ffffff;
+  box-shadow: 0 0 20px rgba(220, 38, 38, 0.6);
+  pointer-events: none;
+  display: none;
+  animation: pulse 1.5s infinite;
+  z-index: 3;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 0.95; }
+  50% { opacity: 0.7; }
+}
+
+/* マイク未起動オーバーレイ */
+.start-overlay {
+  position: absolute;
+  inset: 0;
+  background-color: rgba(6, 10, 18, 0.85);
+  backdrop-filter: blur(4px);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 16px;
+  z-index: 5;
+  padding: 20px;
+  text-align: center;
+}
+
+.start-btn {
+  background-color: var(--accent-color);
+  color: #ffffff;
+  border: none;
+  border-radius: 12px;
+  padding: 16px 36px;
+  font-size: 1.25rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 16px var(--accent-glow);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.start-btn:active {
+  transform: scale(0.97);
+}
+
+/* --- 6. 操作コントロールバー --- */
+.control-panel {
+  background-color: var(--bg-panel);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 12px 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.main-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* 一時停止ボタン（大きく押しやすく設計） */
+.btn-freeze {
+  background-color: #2563eb;
+  color: #ffffff;
+  border: none;
+  border-radius: 10px;
+  padding: 12px 24px;
+  font-size: 1.1rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: background-color 0.2s ease, transform 0.1s ease;
+  min-width: 140px;
+  justify-content: center;
+}
+
+.btn-freeze.frozen {
+  background: linear-gradient(135deg, #f97316, #ea580c);
+  color: #ffffff;
+  box-shadow: 0 0 16px rgba(249, 115, 22, 0.6);
+  border: 1px solid #fdba74;
+}
+
+.btn-freeze:active {
+  transform: scale(0.97);
+}
+
+.btn-save {
+  background-color: #059669;
+  color: #ffffff;
+  border: none;
+  border-radius: 10px;
+  padding: 12px 20px;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: background-color 0.2s ease;
+}
+
+.btn-save:hover {
+  background-color: #047857;
+}
+
+/* 生徒画面用ノイズゲート（混入防止）コントロールカード */
+.student-gate-control {
+  background-color: var(--bg-panel);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 8px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 240px;
+  flex: 1;
+  max-width: 380px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.gate-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.gate-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-main);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.gate-val-badge {
+  font-size: 0.8rem;
+  font-weight: 800;
+  color: #ef4444;
+  background-color: rgba(239, 68, 68, 0.12);
+  padding: 1px 8px;
+  border-radius: 10px;
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  font-family: monospace;
+}
+
+/* パラメータ調整グループ（TIME/DIV, VOLTS/DIV） */
+.param-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+}
+
+.control-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.control-item label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.select-box {
+  background-color: var(--bg-canvas);
+  color: var(--text-main);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  outline: none;
+}
+
+.select-box:focus {
+  border-color: var(--accent-color);
+}
+
+/* 音量メーター・ノイズゲートバー */
+.gate-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 180px;
+}
+
+.meter-container {
+  position: relative;
+  width: 100%;
+  height: 14px;
+  background-color: var(--bg-canvas);
+  border: 1px solid var(--border-color);
+  border-radius: 7px;
+  overflow: hidden;
+}
+
+.meter-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(to right, #22c55e 60%, #eab308 85%, #ef4444 100%);
+  transition: width 0.05s ease-out;
+}
+
+.gate-threshold-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background-color: #ef4444;
+  box-shadow: 0 0 4px #ef4444;
+  z-index: 2;
+}
+
+.slider-input {
+  width: 100%;
+  cursor: pointer;
+  accent-color: #ef4444;
+}
+
+/* --- 7. モーダルダイアログ --- */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 16px;
+  z-index: 100;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+.modal-overlay.active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.modal-card {
+  background-color: var(--bg-panel);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 24px;
+  width: 100%;
+  max-width: 480px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.modal-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-main);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.modal-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.modal-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.modal-input {
+  background-color: var(--bg-canvas);
+  border: 1px solid var(--border-color);
+  color: var(--text-main);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 0.95rem;
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+
+.modal-input:focus {
+  border-color: var(--accent-color);
+}
+
+.modal-input.error {
+  border-color: #ef4444;
+  background-color: rgba(239, 68, 68, 0.05);
+}
+
+.modal-alert {
+  font-size: 0.8rem;
+  color: #ef4444;
+  font-weight: 600;
+  display: none;
+}
+
+.modal-alert.visible {
+  display: block;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.btn-secondary {
+  background-color: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border-color);
+  padding: 10px 18px;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-primary {
+  background-color: var(--accent-color);
+  color: #ffffff;
+  border: none;
+  padding: 10px 22px;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* レスポンシブ調整（タブレット・スマホ対応） */
+@media (max-width: 768px) {
+  .control-panel {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .main-controls {
+    justify-content: space-between;
+  }
+  .param-controls {
+    justify-content: space-between;
+  }
+  .btn-freeze {
+    flex: 1;
+  }
+  .btn-save {
+    flex: 1;
+  }
+}
+
+/* ======================================================================
+   8. 波形比較 ＆ 手動位相シフトパネル スタイル
+   ====================================================================== */
+.compare-panel {
+  background-color: var(--bg-panel);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 12px 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* 音A・音B スロットカード */
+.slot-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background-color: var(--bg-canvas);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 8px 12px;
+  min-width: 170px;
+  flex: 1;
+  max-width: 260px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.slot-card.slot-a {
+  border-left: 4px solid #3b82f6;
+}
+
+.slot-card.slot-b {
+  border-left: 4px solid #ef4444;
+}
+
+.slot-card.has-data.slot-a {
+  border-color: #3b82f6;
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.2);
+}
+
+.slot-card.has-data.slot-b {
+  border-color: #ef4444;
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.2);
+}
+
+.slot-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.slot-badge {
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.slot-status {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.slot-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-slot {
+  flex: 1;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  border: none;
+  cursor: pointer;
+  transition: transform 0.1s ease, background-color 0.2s ease;
+}
+
+.btn-slot-a {
+  background-color: #2563eb;
+  color: #ffffff;
+}
+
+.btn-slot-a:hover {
+  background-color: #1d4ed8;
+}
+
+.btn-slot-b {
+  background-color: #dc2626;
+  color: #ffffff;
+}
+
+.btn-slot-b:hover {
+  background-color: #b91c1c;
+}
+
+.btn-slot:active {
+  transform: scale(0.97);
+}
+
+.btn-slot-clear {
+  background-color: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.btn-slot-clear:hover {
+  color: #ef4444;
+  border-color: #ef4444;
+}
+
+/* 比較表示モード切替 */
+.compare-mode-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.control-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.mode-toggle-buttons {
+  display: flex;
+  background-color: var(--bg-canvas);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 2px;
+}
+
+.btn-mode {
+  background-color: transparent;
+  color: var(--text-muted);
+  border: none;
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.btn-mode.active {
+  background-color: var(--accent-color);
+  color: #ffffff;
+}
+
+/* 手動位相シフトコントロール */
+.phase-shift-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-width: 260px;
+}
+
+.phase-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.phase-val {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--accent-color);
+  font-family: monospace;
+}
+
+.phase-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.phase-slider {
+  flex: 1;
+  cursor: pointer;
+  accent-color: var(--accent-color);
+}
+
+.btn-phase-step {
+  background-color: var(--bg-canvas);
+  color: var(--text-main);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  width: 32px;
+  height: 30px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.btn-phase-step:hover {
+  border-color: var(--accent-color);
+}
+
+.btn-phase-reset {
+  background-color: var(--bg-canvas);
+  color: var(--text-muted);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-phase-reset:hover {
+  color: var(--text-main);
+}
+
+/* ======================================================================
+   9. 画面切り替えタブナビゲーション スタイル
+   ====================================================================== */
+.nav-tabs {
+  display: flex;
+  gap: 8px;
+  background-color: var(--bg-panel);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 6px;
+  overflow-x: auto;
+}
+
+.nav-tab {
+  flex: 1;
+  min-width: 160px;
+  background-color: transparent;
+  color: var(--text-muted);
+  border: none;
+  border-radius: 8px;
+  padding: 10px 16px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.nav-tab:hover {
+  color: var(--text-main);
+  background-color: rgba(255, 255, 255, 0.04);
+}
+
+.nav-tab.active {
+  background-color: var(--accent-color);
+  color: #ffffff;
+  box-shadow: 0 2px 10px var(--accent-glow);
+}
+
+/* タブペイン表示切替 */
+.tab-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+}
+
+/* ======================================================================
+   10. 【タブ2】音の高さしらべ（チューナー） スタイル
+   ====================================================================== */
+.tuner-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 20px 0;
+  width: 100%;
+}
+
+.tuner-card {
+  background-color: var(--bg-panel);
+  border: 1px solid var(--border-color);
+  border-radius: 20px;
+  padding: 32px 24px;
+  width: 100%;
+  max-width: 640px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
+  text-align: center;
+}
+
+/* 大きな音名サークル */
+.tuner-note-display {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 160px;
+  height: 160px;
+  border-radius: 50%;
+  background-color: var(--bg-canvas);
+  border: 4px solid var(--border-color);
+  box-shadow: 0 0 25px rgba(0, 0, 0, 0.3);
+  transition: all 0.2s ease;
+}
+
+.tuner-note-display.in-tune {
+  border-color: #22c55e;
+  box-shadow: 0 0 35px rgba(34, 197, 94, 0.4);
+}
+
+.note-solfege {
+  font-size: 3.5rem;
+  font-weight: 900;
+  line-height: 1;
+  color: var(--text-main);
+}
+
+.note-name {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+/* 周波数表示 */
+.tuner-freq-display {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-family: monospace;
+}
+
+.freq-label {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.freq-val {
+  font-size: 1.8rem;
+  font-weight: 800;
+  color: var(--accent-color);
+}
+
+.freq-standard {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+/* チューニングメーター（針・トラック） */
+.meter-gauge-wrapper {
+  width: 100%;
+  max-width: 480px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.gauge-scale {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  padding: 0 4px;
+}
+
+.gauge-scale .center-mark {
+  color: #22c55e;
+}
+
+.gauge-track {
+  position: relative;
+  width: 100%;
+  height: 20px;
+  background-color: var(--bg-canvas);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.gauge-center-zone {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 45%;
+  width: 10%;
+  background-color: rgba(34, 197, 94, 0.25);
+}
+
+.gauge-needle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background-color: #ef4444;
+  transform: translateX(-50%);
+  border-radius: 2px;
+  box-shadow: 0 0 8px #ef4444;
+  transition: left 0.1s ease-out;
+}
+
+.gauge-needle.in-tune {
+  background-color: #22c55e;
+  box-shadow: 0 0 12px #22c55e;
+}
+
+.gauge-cents {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  font-family: monospace;
+}
+
+.tuner-status-msg {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-main);
+  padding: 8px 16px;
+  border-radius: 8px;
+  background-color: var(--bg-canvas);
+  border: 1px solid var(--border-color);
+}
+
+/* ======================================================================
+   11. 【タブ3】基準音ジェネレーター スタイル
+   ====================================================================== */
+.generator-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 20px 0;
+  width: 100%;
+}
+
+.generator-card {
+  background-color: var(--bg-panel);
+  border: 1px solid var(--border-color);
+  border-radius: 20px;
+  padding: 32px 24px;
+  width: 100%;
+  max-width: 680px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
+}
+
+.gen-title {
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: var(--text-main);
+}
+
+.gen-desc {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.gen-label {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.preset-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.preset-buttons {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.btn-preset {
+  background-color: var(--bg-canvas);
+  color: var(--text-main);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-preset:hover {
+  border-color: var(--accent-color);
+}
+
+.btn-preset.active {
+  background-color: var(--accent-color);
+  color: #ffffff;
+  border-color: var(--accent-color);
+  box-shadow: 0 2px 10px var(--accent-glow);
+}
+
+/* 周波数コントロール */
+.freq-control-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background-color: var(--bg-canvas);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.freq-display-box {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.gen-freq-number {
+  font-size: 2rem;
+  font-weight: 900;
+  color: var(--accent-color);
+  font-family: monospace;
+}
+
+.gen-note-label {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.gen-slider {
+  width: 100%;
+  cursor: pointer;
+  accent-color: var(--accent-color);
+  height: 8px;
+}
+
+.slider-ticks {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+/* 波形タイプ選択 */
+.wave-type-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.wave-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip-wave {
+  background-color: var(--bg-canvas);
+  color: var(--text-main);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.chip-wave.active {
+  background-color: var(--accent-color);
+  color: #ffffff;
+  border-color: var(--accent-color);
+}
+
+/* アクションボタン */
+.gen-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.btn-gen-play {
+  flex: 1;
+  min-width: 180px;
+  background-color: #22c55e;
+  color: #ffffff;
+  border: none;
+  border-radius: 12px;
+  padding: 14px 24px;
+  font-size: 1.15rem;
+  font-weight: 800;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  box-shadow: 0 4px 16px rgba(34, 197, 94, 0.4);
+  transition: all 0.2s ease;
+}
+
+.btn-gen-play.playing {
+  background-color: #dc2626;
+  box-shadow: 0 4px 16px rgba(220, 38, 38, 0.4);
+}
+
+.btn-loopback {
+  background-color: var(--bg-canvas);
+  color: var(--text-main);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 14px 20px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.15s ease;
+}
+
+.btn-loopback.active {
+  border-color: var(--accent-color);
+  background-color: rgba(34, 197, 94, 0.1);
+  color: var(--accent-color);
+}
+
+/* ==========================================================================
+   先生用設定・コントロールパネル (Teacher Mode UI)
+   ========================================================================== */
+
+/* 先生用ヘッダーボタン */
+.btn-teacher-auth {
+  background-color: rgba(255, 255, 255, 0.08);
+  color: var(--text-main);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+}
+
+.btn-teacher-auth:hover {
+  background-color: rgba(255, 255, 255, 0.15);
+  border-color: var(--text-muted);
+}
+
+/* 先生モード稼働中インジケーター */
+.teacher-mode-badge {
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: #ffffff;
+  font-size: 0.75rem;
+  font-weight: 800;
+  padding: 4px 10px;
+  border-radius: 20px;
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.35);
+  letter-spacing: 0.02em;
+}
+
+/* ゲインOSDバッジの微調整 */
+.osd-gain-badge {
+  color: #38bdf8 !important;
+  font-weight: 800 !important;
+}
+
+/* パスコード認証モーダル */
+.modal-auth-card {
+  max-width: 360px;
+  text-align: center;
+  padding: 28px 24px;
+}
+
+.modal-auth-icon {
+  font-size: 2.8rem;
+  margin-bottom: 8px;
+}
+
+.passcode-input {
+  width: 180px;
+  padding: 12px;
+  font-size: 1.8rem;
+  font-weight: 800;
+  letter-spacing: 0.6em;
+  text-align: center;
+  border-radius: 12px;
+  border: 2px solid var(--border-color);
+  background-color: var(--bg-canvas);
+  color: var(--text-main);
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+
+.passcode-input:focus {
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+/* 先生専用コントロールパネルモーダル */
+.modal-teacher-panel {
+  max-width: 620px;
+  width: 95%;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+  border-radius: 20px;
+}
+
+.teacher-panel-header {
+  padding: 18px 24px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border-color);
+  background-color: var(--bg-panel);
+}
+
+.btn-modal-close {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.3rem;
+  font-weight: bold;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: color 0.15s;
+}
+
+.btn-modal-close:hover {
+  color: var(--text-main);
+}
+
+.teacher-panel-body {
+  padding: 20px 24px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  background-color: var(--bg-canvas);
+}
+
+.t-section {
+  background-color: var(--bg-panel);
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  padding: 16px;
+}
+
+.t-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.t-section-label {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-main);
+  display: block;
+  margin-bottom: 6px;
+}
+
+.t-section-desc {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+  line-height: 1.4;
+}
+
+.t-value-badge {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #38bdf8;
+  background-color: rgba(56, 189, 248, 0.12);
+  padding: 3px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(56, 189, 248, 0.25);
+}
+
+/* 授業シーン別ワンタッププリセット */
+.scene-preset-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.btn-scene-preset {
+  background-color: var(--bg-canvas);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 12px;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transition: all 0.2s ease;
+}
+
+.btn-scene-preset:hover {
+  border-color: var(--accent-color);
+  background-color: rgba(34, 197, 94, 0.06);
+  transform: translateY(-2px);
+}
+
+.scene-icon {
+  font-size: 1.3rem;
+}
+
+.scene-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.scene-detail {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+/* ゲイン クイック選択ボタングループ */
+.gain-quick-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.btn-gain-quick {
+  background-color: var(--bg-canvas);
+  border: 1px solid var(--border-color);
+  color: var(--text-main);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  flex: 1;
+  text-align: center;
+  transition: all 0.15s ease;
+}
+
+.btn-gain-quick:hover {
+  border-color: #38bdf8;
+}
+
+.btn-gain-quick.active {
+  background-color: #0284c7;
+  border-color: #38bdf8;
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(2, 132, 199, 0.4);
+}
+
+.gain-slider-wrapper {
+  margin-top: 6px;
+}
+
+/* 横マス数 クイック選択ボタングループ */
+.width-quick-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.btn-width-quick {
+  background-color: var(--bg-canvas);
+  border: 1px solid var(--border-color);
+  color: var(--text-main);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  flex: 1;
+  text-align: center;
+  transition: all 0.15s ease;
+}
+
+.btn-width-quick:hover {
+  border-color: #10b981;
+}
+
+.btn-width-quick.active {
+  background-color: #059669;
+  border-color: #10b981;
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.4);
+}
+
+/* 2列グリッド */
+.t-grid-two {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 6px;
+}
+
+.t-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.t-sublabel {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+/* トグルスイッチUI */
+.t-section-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.toggle-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.toggle-title {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.toggle-desc {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  line-height: 1.3;
+}
+
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 52px;
+  height: 28px;
+  flex-shrink: 0;
+}
+
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: var(--border-color);
+  transition: .3s;
+  border-radius: 28px;
+}
+
+.toggle-slider:before {
+  position: absolute;
+  content: "";
+  height: 20px;
+  width: 20px;
+  left: 4px;
+  bottom: 4px;
+  background-color: white;
+  transition: .3s;
+  border-radius: 50%;
+}
+
+.toggle-switch input:checked + .toggle-slider {
+  background-color: #10b981;
+}
+
+.toggle-switch input:checked + .toggle-slider:before {
+  transform: translateX(24px);
+}
+
+/* パネルフッター */
+.teacher-panel-footer {
+  padding: 16px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid var(--border-color);
+  background-color: var(--bg-panel);
+  gap: 12px;
+}
+
+/* リアルタイム同期（生徒画面ヘッダー要素） */
+.btn-room-join {
+  background-color: rgba(56, 189, 248, 0.12);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+}
+
+.btn-room-join:hover {
+  background-color: rgba(56, 189, 248, 0.22);
+  border-color: #38bdf8;
+}
+
+.room-status-badge {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 0.82rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.room-status-badge:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  border-color: rgba(239, 68, 68, 0.35);
+}
+
+/* ======================================================================
+   設定リンク配布（URLパラメータ共有）＆ トースト通知スタイル
+   ====================================================================== */
+
+/* 生徒配布リンクカード */
+.t-share-section {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.12), rgba(6, 95, 70, 0.18));
+  border: 1.5px solid rgba(16, 185, 129, 0.4);
+  box-shadow: 0 4px 16px rgba(16, 185, 129, 0.1);
+}
+
+.t-share-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.t-share-badge {
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: #ffffff;
+  font-size: 0.72rem;
+  font-weight: 800;
+  padding: 3px 8px;
+  border-radius: 6px;
+  letter-spacing: 0.04em;
+}
+
+.share-action-box {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* 設定リンク一括コピーボタン */
+.btn-copy-link {
+  background: linear-gradient(135deg, #10b981, #047857);
+  color: #ffffff;
+  border: none;
+  border-radius: 10px;
+  padding: 12px 18px;
+  font-size: 0.95rem;
+  font-weight: 800;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.35);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.btn-copy-link:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(16, 185, 129, 0.45);
+  background: linear-gradient(135deg, #34d399, #059669);
+}
+
+.btn-copy-link:active {
+  transform: translateY(0);
+}
+
+.share-url-preview-wrapper {
+  position: relative;
+}
+
+.share-url-preview {
+  width: 100%;
+  background-color: var(--bg-canvas);
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  font-family: monospace;
+  font-size: 0.78rem;
+  padding: 8px 12px;
+  border-radius: 8px;
+  outline: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* プリセットカード内の小コピーボタン */
+.scene-preset-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.btn-preset-link-copy {
+  background-color: var(--bg-canvas);
+  border: 1px solid var(--border-color);
+  color: #38bdf8;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 6px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: center;
+}
+
+.btn-preset-link-copy:hover {
+  background-color: rgba(56, 189, 248, 0.12);
+  border-color: #38bdf8;
+  color: #7dd3fc;
+}
+
+/* トースト通知 */
+.toast-notification {
+  position: fixed;
+  top: 24px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-20px);
+  background: rgba(15, 23, 42, 0.95);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1.5px solid #10b981;
+  color: #ffffff;
+  padding: 12px 24px;
+  border-radius: 30px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6), 0 0 15px rgba(16, 185, 129, 0.3);
+  z-index: 999999;
+  opacity: 0;
+  pointer-events: none;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.toast-notification.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+  pointer-events: auto;
+}
+
+

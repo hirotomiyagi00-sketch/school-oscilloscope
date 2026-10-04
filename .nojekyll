@@ -1,0 +1,2 @@
+# GitHub Pages Jekyll bypass
+# このファイルが存在することで、Jekyllビルド処理をスキップし、静的ファイルが直接配信されます。
