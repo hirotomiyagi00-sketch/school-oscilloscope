@@ -496,14 +496,35 @@ function applyHorizontalDivs(divs, isSyncEvent = false) {
 }
 
 /**
+ * セレクトボックスのoption要素から、数値的に一致する項目を確実に選択するヘルパー
+ * 【なぜこの関数が必要なのか】
+ * JavaScriptの数値文字列化（例: 5.0 -> "5"）とHTMLの<option value="5.0">で
+ * 文字列の不一致が発生し、selectedIndexが-1になって画像保存時にクラッシュするのを防ぐため。
+ * 
+ * @param {HTMLSelectElement} select - 対象のセレクト要素
+ * @param {number} numVal - 設定したい数値
+ */
+function syncSelectByNumericValue(select, numVal) {
+  if (!select || !select.options) return;
+  const targetNum = Number(numVal);
+  for (let opt of select.options) {
+    const optNum = parseFloat(opt.value);
+    if (!isNaN(optNum) && Math.abs(optNum - targetNum) < 0.001) {
+      select.value = opt.value;
+      return;
+    }
+  }
+}
+
+/**
  * TIME/DIV（時間の目盛り）を適用・同期する関数
  * @param {number} val - ミリ秒/div
  */
 function applyTimeDiv(val, isSyncEvent = false) {
   renderer.setTimeDiv(val);
   osdTimeDiv.textContent = `TIME: ${val.toFixed(1)} ms/div`;
-  timeDivSelect.value = String(val);
-  teacherTimeDivSelect.value = String(val);
+  syncSelectByNumericValue(timeDivSelect, val);
+  syncSelectByNumericValue(teacherTimeDivSelect, val);
 
   if (!isSyncEvent) {
     syncCurrentConfigToStudents();
@@ -518,8 +539,8 @@ function applyTimeDiv(val, isSyncEvent = false) {
 function applyVoltsDiv(val, isSyncEvent = false) {
   renderer.setVoltsDiv(val);
   osdVoltsDiv.textContent = `VOLT: ${val.toFixed(1)} V/div`;
-  voltsDivSelect.value = String(val);
-  teacherVoltsDivSelect.value = String(val);
+  syncSelectByNumericValue(voltsDivSelect, val);
+  syncSelectByNumericValue(teacherVoltsDivSelect, val);
 
   if (!isSyncEvent) {
     syncCurrentConfigToStudents();
@@ -1243,8 +1264,16 @@ function exportImageWithMetadata(studentName, experimentCond) {
     minute: "2-digit"
   });
 
-  const timeDivText = timeDivSelect.options[timeDivSelect.selectedIndex].text;
-  const voltsDivText = voltsDivSelect.options[voltsDivSelect.selectedIndex].text;
+  // 【なぜ安全なフォールバックを設けるのか】
+  // セレクトボックスの選択状態が万が一外れていても、renderer の実保持値から
+  // 正確な目盛りラベルを生成し、TypeError による保存失敗を100%防止するため。
+  const timeDivText = (timeDivSelect && timeDivSelect.selectedIndex >= 0 && timeDivSelect.options[timeDivSelect.selectedIndex])
+    ? timeDivSelect.options[timeDivSelect.selectedIndex].text
+    : `${renderer.timeDivMs.toFixed(1)} ms/div`;
+
+  const voltsDivText = (voltsDivSelect && voltsDivSelect.selectedIndex >= 0 && voltsDivSelect.options[voltsDivSelect.selectedIndex])
+    ? voltsDivSelect.options[voltsDivSelect.selectedIndex].text
+    : `${renderer.voltsDiv.toFixed(1)} V/div`;
 
   // 1行目: なまえ & 日時
   const line1Y = Math.floor(headerHeight * 0.40);
@@ -1293,10 +1322,16 @@ function exportImageWithMetadata(studentName, experimentCond) {
   const safeCond = experimentCond.replace(/[\\/:*?"<>| ]/g, "_");
   const fileName = `${safeName}_${safeCond}.png`;
 
+  // 【なぜ document.body に append してから click するのか】
+  // iOS Safari / WebKit や一部の Chromebook 環境では、DOMツリーに接続されていない
+  // <a> タグのプログラム的 click() がブラウザのセキュリティ制限でブロックされるため、
+  // 一時的に body へ接続して発火後に即座に破棄する。
   const link = document.createElement("a");
   link.download = fileName;
   link.href = exportCanvas.toDataURL("image/png");
+  document.body.appendChild(link);
   link.click();
+  document.body.removeChild(link);
 }
 
 // ==========================================================================

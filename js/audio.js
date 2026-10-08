@@ -37,6 +37,38 @@ let gateHoldCounter = 0;
 const GATE_HOLD_FRAMES = 10;
 
 /**
+ * 波形解析パイプライン（GainNode → AnalyserNode）を初期化・確保する内部ヘルパー
+ * 【なぜこの共通化が必要なのか】
+ * マイク入力だけでなく、アプリ内部で生成した基準音（トーンジェネレーター）の直結観察時にも
+ * まったく同じゲイン増幅器（GainNode）と解析器（AnalyserNode）を通すことで、
+ * どちらの入力ソースでも先生が設定したゲイン倍率（0.5x〜10x）が正確に波形振幅に反映されるようにするため。
+ */
+function ensureAnalysisPipeline() {
+  if (!audioContext) {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    audioContext = new AudioContextClass({
+      latencyHint: "interactive"
+    });
+  }
+  if (!gainNode) {
+    gainNode = audioContext.createGain();
+    gainNode.gain.setValueAtTime(currentGain, audioContext.currentTime);
+    gainNode.gain.value = currentGain;
+  }
+  if (!analyserNode) {
+    analyserNode = audioContext.createAnalyser();
+    // 【なぜ fftSize を 2048 に設定するのか】
+    // 時間領域のサンプリング解像度を十分に高く確保し、
+    // 高い音（細かな波）でも滑らかに描画できるようにするため。
+    analyserNode.fftSize = 2048;
+    timeDomainBuffer = new Float32Array(analyserNode.fftSize);
+
+    // ゲインノード → アナライザー に接続（スピーカーには出力しないためハウリングしない）
+    gainNode.connect(analyserNode);
+  }
+}
+
+/**
  * マイクを初期化し、音声解析を開始する関数
  * 【なぜユーザー操作（クリック）が必要なのか】
  * ブラウザのセキュリティ仕様（Autoplay Policy）により、ユーザーのクリック等の
@@ -46,15 +78,8 @@ const GATE_HOLD_FRAMES = 10;
  */
 export async function initAudio() {
   try {
-    // 既存のコンテキストがある場合は再利用または作成
-    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-    
-    // 【なぜ latencyHint: "interactive" を指定するのか】
-    // ブラウザに「最小のバッファサイズ（最短レイテンシ）」でのリアルタイム処理を指示し、
-    // 音声を発してから画面に反映されるまでの時間差を極限までゼロに近づけるため。
-    audioContext = new AudioContextClass({
-      latencyHint: "interactive"
-    });
+    // 共通解析パイプライン（GainNode -> AnalyserNode）を確保
+    ensureAnalysisPipeline();
 
     // マイクのアクセス許可をリクエスト
     // 【なぜ echoCancellation 等を無効化するのか】
@@ -76,23 +101,7 @@ export async function initAudio() {
     // 【なぜGainNode（増幅器）を挟むのか】
     // 先生が設定したゲイン倍率（0.5x〜10x）で信号を増幅し、
     // 小さな音やおんさの減衰音でも波形が大きく綺麗に映るようにするため。
-    gainNode = audioContext.createGain();
-    gainNode.gain.setValueAtTime(currentGain, audioContext.currentTime);
-
-    // アナライザーノード（波形解析器）の作成
-    analyserNode = audioContext.createAnalyser();
-    
-    // 【なぜ fftSize を 2048 に設定するのか】
-    // 時間領域のサンプリング解像度を十分に高く確保し、
-    // 高い音（細かな波）でも滑らかに描画できるようにするため。
-    analyserNode.fftSize = 2048;
-
-    // ソース → ゲインノード → アナライザー に接続（スピーカーには出力しないためハウリングしない）
     sourceNode.connect(gainNode);
-    gainNode.connect(analyserNode);
-
-    // 波形データを受け取るバッファ領域を確保 (-1.0 〜 +1.0 の浮動小数点配列)
-    timeDomainBuffer = new Float32Array(analyserNode.fftSize);
 
     // コンテキストがサスペンド状態の場合は再開
     if (audioContext.state === "suspended") {
@@ -108,9 +117,11 @@ export async function initAudio() {
 
 /**
  * マイク感度・波形ゲイン（増幅倍率）を設定する関数
- * 【なぜ linearRampToValueAtTime を用いるのか】
- * ゲインを瞬時に切り替えると「プチッ」という破裂音（クリックノイズ）が生じ、
- * 波形が乱れたりノイズゲートが誤判定するのを防ぐため、0.04秒かけて滑らかに音量を変更する。
+ * 【なぜ setValueAtTime でアンカーした後に linearRamp を用いるのか】
+ * - ゲインを瞬時に切り替えると「プチッ」という破裂音（クリックノイズ）が生じ、
+ *   波形が乱れたりノイズゲートが誤判定するのを防ぐため、0.04秒かけて滑らかに音量を変更する。
+ * - cancelScheduledValues 直後に現在値を明示的に setValueAtTime しないと、
+ *   Web Audio API 仕様によりランプの始点が未定義となってゲイン変更が無視されるのを防ぐ。
  * 
  * @param {number} multiplier - 増幅倍率（0.5〜10.0など）
  */
@@ -120,10 +131,13 @@ export function setGain(multiplier) {
   if (gainNode && audioContext) {
     try {
       gainNode.gain.cancelScheduledValues(audioContext.currentTime);
+      gainNode.gain.setValueAtTime(gainNode.gain.value, audioContext.currentTime);
       gainNode.gain.linearRampToValueAtTime(val, audioContext.currentTime + 0.04);
     } catch (e) {
       gainNode.gain.setValueAtTime(val, audioContext.currentTime);
     }
+    // プロパティ直接代入も併用し、確実に即時反映させる
+    gainNode.gain.value = val;
   }
 }
 
@@ -326,10 +340,11 @@ export function startTone(freq = 440, type = "sine", volume = 0.3) {
   toneGainNode.connect(audioContext.destination);
 
   // 【内部直結モード】
-  // マイクを通さずに直接オシロスコープのアナライザーに送ることで、
-  // ハウリングなしに綺麗なサイン波や矩形波を観察できるようにする。
-  if (isLoopbackEnabled && analyserNode) {
-    toneGainNode.connect(analyserNode);
+  // マイクを通さずに直接オシロスコープのGainNode（ゲイン増幅器）に送ることで、
+  // ハウリングなしに綺麗なサイン波を観察でき、かつゲイン変更も正確に反映されるようにする。
+  if (isLoopbackEnabled) {
+    ensureAnalysisPipeline();
+    toneGainNode.connect(gainNode);
   }
 
   toneOscillator.start();
@@ -387,13 +402,16 @@ export function stopTone() {
  * @param {boolean} enabled - 有効にするか
  */
 export function setLoopbackEnabled(enabled) {
-  isLoopbackEnabled = enabled;
-  if (toneGainNode && analyserNode) {
-    if (enabled) {
-      toneGainNode.connect(analyserNode);
-    } else {
+  isLoopbackEnabled = !!enabled;
+  if (toneGainNode) {
+    if (isLoopbackEnabled) {
+      ensureAnalysisPipeline();
       try {
-        toneGainNode.disconnect(analyserNode);
+        toneGainNode.connect(gainNode);
+      } catch (e) {}
+    } else if (gainNode) {
+      try {
+        toneGainNode.disconnect(gainNode);
       } catch (e) {}
     }
   }
@@ -412,4 +430,5 @@ export function stopAudio() {
   }
   audioContext = null;
   analyserNode = null;
+  gainNode = null;
 }
