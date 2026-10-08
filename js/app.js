@@ -1215,11 +1215,24 @@ btnConfirmSave.addEventListener("click", () => {
   // どちらかが未入力の場合は保存を中止して生徒に入力を促す
   if (hasError) return;
 
-  // 合成画像の生成とダウンロード
-  exportImageWithMetadata(name, cond);
+  // 【二重送信・連打防止ガード】
+  // 学校のタブレット等で生徒がボタンを連打して重複ダウンロードダイアログが開くのを防止
+  btnConfirmSave.disabled = true;
+  btnConfirmSave.textContent = "💾 保存中...";
 
-  // モーダルを閉じる
-  saveModal.classList.remove("active");
+  try {
+    // 合成画像の生成とダウンロード
+    exportImageWithMetadata(name, cond);
+  } catch (err) {
+    console.error("[Export] 画像出力エラー:", err);
+    alert("画像の保存中にエラーが発生しました: " + err.message);
+  } finally {
+    setTimeout(() => {
+      btnConfirmSave.disabled = false;
+      btnConfirmSave.textContent = "画像を保存する";
+      saveModal.classList.remove("active");
+    }, 300);
+  }
 });
 
 /**
@@ -1317,21 +1330,62 @@ function exportImageWithMetadata(studentName, experimentCond) {
   exportCtx.drawImage(canvas, 0, headerHeight);
 
   // 5. 安全なファイル名を生成してダウンロード
-  // ファイル名禁止記号（\ / : * ? " < > |）を '_' に置換
-  const safeName = studentName.replace(/[\\/:*?"<>| ]/g, "_");
-  const safeCond = experimentCond.replace(/[\\/:*?"<>| ]/g, "_");
+  // ファイル名禁止記号（\ / : * ? " < > |）および改行・タブを '_' に置換（最大50文字に制限）
+  const safeName = studentName.replace(/[\\/:*?"<>|\r\n\t]/g, "_").trim().slice(0, 50) || "生徒";
+  const safeCond = experimentCond.replace(/[\\/:*?"<>|\r\n\t]/g, "_").trim().slice(0, 50) || "実験";
   const fileName = `${safeName}_${safeCond}.png`;
 
-  // 【なぜ document.body に append してから click するのか】
-  // iOS Safari / WebKit や一部の Chromebook 環境では、DOMツリーに接続されていない
-  // <a> タグのプログラム的 click() がブラウザのセキュリティ制限でブロックされるため、
-  // 一時的に body へ接続して発火後に即座に破棄する。
-  const link = document.createElement("a");
-  link.download = fileName;
-  link.href = exportCanvas.toDataURL("image/png");
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
+  // 【ダウンロード発火用ヘルパー関数】
+  // DOMに一時的に追加してクリック後に安全に破棄する
+  const triggerDownload = (url, name) => {
+    const link = document.createElement("a");
+    link.style.display = "none";
+    link.download = name;
+    link.href = url;
+    document.body.appendChild(link);
+    link.click();
+    setTimeout(() => {
+      if (link.parentNode) {
+        link.parentNode.removeChild(link);
+      }
+    }, 100);
+  };
+
+  // 【なぜ toDataURL ではなく toBlob ＋ createObjectURL を用いるのか】
+  // - Retina/高DPIディスプレイでは Canvas が巨大（2880x1600等）になり、
+  //   toDataURL で生成される Base64 文字列長が Chrome の URL 上限（約2MB）を大幅に超過する。
+  // - Chromium は長すぎる Data URL からのダウンロードを Windows ではセキュリティ保護として
+  //   サイレントブロック（無反応）し、Mac ではファイル名や拡張子を剥奪して「download」という
+  //   破損ファイルとして書き出す致命的な問題がある。
+  // - バイナリ Blob ＋ Object URL（blob:https://...）を用いることで、URL長制限がなくなり、
+  //   Windows・Mac・iPad・Chromebook 全ての環境で指定ファイル名（.png）が 100% 保持されて
+  //   確実にダウンロードが発火する。
+  if (exportCanvas.toBlob) {
+    exportCanvas.toBlob((blob) => {
+      if (!blob) {
+        console.warn("[Export] toBlob が null を返したため、toDataURL にフォールバックします");
+        try {
+          triggerDownload(exportCanvas.toDataURL("image/png"), fileName);
+          showToast(`📸 「${fileName}」を保存しました`);
+        } catch (e) {
+          alert("画像の保存に失敗しました: " + e.message);
+        }
+        return;
+      }
+      const blobUrl = URL.createObjectURL(blob);
+      triggerDownload(blobUrl, fileName);
+      showToast(`📸 「${fileName}」を保存しました`);
+
+      // メモリリーク防止のため少し遅延させて解放
+      setTimeout(() => {
+        URL.revokeObjectURL(blobUrl);
+      }, 10000);
+    }, "image/png");
+  } else {
+    // レガシーブラウザ向けフォールバック
+    triggerDownload(exportCanvas.toDataURL("image/png"), fileName);
+    showToast(`📸 「${fileName}」を保存しました`);
+  }
 }
 
 // ==========================================================================
