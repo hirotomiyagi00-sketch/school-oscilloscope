@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" data-theme="classic">
+<html lang="ja" data-theme="medical">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
@@ -41,6 +41,9 @@
     <nav class="nav-tabs">
       <button class="nav-tab active" data-tab="wave" id="tabBtnWave">
         〰️ 波形観察・比較
+      </button>
+      <button class="nav-tab" data-tab="record" id="tabBtnRecord">
+        ⏱️ まるごと波形きろく
       </button>
       <button class="nav-tab" data-tab="tuner" id="tabBtnTuner">
         🎚️ 音の高さしらべ（チューナー）
@@ -150,17 +153,21 @@
           </button>
         </div>
 
-        <!-- 生徒画面用ノイズゲート（混入防止：生徒からも常時調整可能・初期値は先生指定値を継承） -->
+        <!-- 生徒画面用ノイズゲート（音トリガー待機：生徒からも常時調整可能・初期値は先生指定値を継承） -->
         <div class="student-gate-control">
           <div class="gate-header">
-            <label for="noiseGateSlider" class="gate-label">🛡️ まわりの音カット（混入防止）</label>
-            <span id="gateValText" class="gate-val-badge">2%</span>
+            <label for="noiseGateSlider" class="gate-label">🛡️ まわりの音カット（トリガーしきい値）</label>
+            <span id="gateValText" class="gate-val-badge">25%</span>
           </div>
-          <div class="meter-container" title="赤い線の位置より大きい音だけを画面に映します">
+          <div class="meter-container" title="赤い線の位置より大きい音を鳴らすと波形を拾い始めます（10秒間または停止まで）">
             <div id="meterFill" class="meter-fill"></div>
-            <div id="gateLine" class="gate-threshold-line" style="left: 2%;"></div>
+            <div id="gateLine" class="gate-threshold-line" style="left: 25%;"></div>
           </div>
-          <input type="range" id="noiseGateSlider" class="slider-input" min="0" max="30" value="2" title="スライダーを右に動かすと、まわりの小さな雑音を無視して自分の実験音だけをきれいに捉えます">
+          <input type="range" id="noiseGateSlider" class="slider-input" min="0" max="100" value="25" title="スライダーを右に動かすと、小さな雑音を無視して大きな実験音が出た時だけ10秒間波形を拾います（0%で常時表示）">
+          <div class="gate-status-row">
+            <span id="gateStatusBadge" class="gate-status-badge waiting">⏳ 待機中（赤い線以上で開始）</span>
+            <button id="btnResetGateLatch" class="btn-gate-reset" style="display: none;" title="計測をリセットして音の待機状態に戻します">🔄 待機へ戻す</button>
+          </div>
         </div>
 
         <!-- 生徒画面用パラメータエリア（初期状態では生徒から隠してシンプル化、先生モードで解放可能） -->
@@ -288,6 +295,95 @@
               🔀 波形観察タブでこの音を見る
             </button>
           </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================================================================
+         【タブ4】まるごと波形きろく（連続記録・比較画面）
+         ====================================================================== -->
+    <section id="sectionRecord" class="tab-pane" style="display: none;">
+      <div class="screen-wrapper recorder-screen-wrapper">
+        <!-- まるごと波形描画用Canvas -->
+        <canvas id="recorderCanvas"></canvas>
+
+        <!-- OSD情報バッジ -->
+        <div class="osd-overlay">
+          <div class="osd-badge" id="osdRecMode">モード: 上下に並べる</div>
+          <div class="osd-badge" id="osdRecA">音A: 未記録</div>
+          <div class="osd-badge" id="osdRecB">音B: 未記録</div>
+        </div>
+      </div>
+
+      <!-- まるごと波形きろく 操作パネル -->
+      <div class="recorder-panel">
+        <!-- 音Aスロット -->
+        <div class="slot-card slot-a" id="recSlotACard">
+          <div class="slot-header">
+            <span class="slot-badge badge-a">🔵 音A（基準）</span>
+            <span class="slot-status" id="recStatusA">未記録</span>
+          </div>
+          <div class="slot-actions">
+            <button id="btnRecordSlotA" class="btn-slot btn-slot-a" title="ボタンを押して音を鳴らし、もう一度押すと記録が完了します（最大15秒）">
+              <span class="rec-icon" id="recIconA">🔴</span>
+              <span id="btnRecordSlotAText">音Aのきろく開始</span>
+            </button>
+            <button id="btnPlaySlotA" class="btn-slot btn-slot-play" title="記録した音Aを聴く" style="display: none;">
+              ▶ 聴く
+            </button>
+            <button id="btnClearRecSlotA" class="btn-slot-clear" title="音Aを消去" style="display: none;">
+              ✕
+            </button>
+          </div>
+        </div>
+
+        <!-- 音Bスロット -->
+        <div class="slot-card slot-b" id="recSlotBCard">
+          <div class="slot-header">
+            <span class="slot-badge badge-b">🔴 音B（比較）</span>
+            <span class="slot-status" id="recStatusB">未記録</span>
+          </div>
+          <div class="slot-actions">
+            <button id="btnRecordSlotB" class="btn-slot btn-slot-b" title="ボタンを押して音を鳴らし、もう一度押すと記録が完了します（最大15秒）">
+              <span class="rec-icon" id="recIconB">🔴</span>
+              <span id="btnRecordSlotBText">音Bのきろく開始</span>
+            </button>
+            <button id="btnPlaySlotB" class="btn-slot btn-slot-play" title="記録した音Bを聴く" style="display: none;">
+              ▶ 聴く
+            </button>
+            <button id="btnClearRecSlotB" class="btn-slot-clear" title="音Bを消去" style="display: none;">
+              ✕
+            </button>
+          </div>
+        </div>
+
+        <!-- 比較表示モード切替（上下に並べる / 重ね合わせ） -->
+        <div class="compare-mode-group">
+          <span class="control-label">表示方法</span>
+          <div class="mode-toggle-buttons">
+            <button id="btnRecModeSplit" class="btn-mode active" title="上段に音A、下段に音Bを並べて時間軸を比較">上下に並べる</button>
+            <button id="btnRecModeOverlay" class="btn-mode" title="音Aと音Bを同じ時間軸に重ねて表示">重ね合わせ</button>
+          </div>
+        </div>
+
+        <!-- まるごと波形きろく用 閾値調整スライダー（タブ1と連動） -->
+        <div class="student-gate-control rec-gate-control">
+          <div class="gate-header">
+            <label for="recNoiseGateSlider" class="gate-label">🛡️ 記録スタートのしきい値（音で自動開始）</label>
+            <span id="recGateValText" class="gate-val-badge">25%</span>
+          </div>
+          <div class="meter-container" title="記録開始を押した後、赤い線より大きい音を鳴らした瞬間から波形を測定し始めます">
+            <div id="recMeterFill" class="meter-fill"></div>
+            <div id="recGateLine" class="gate-threshold-line" style="left: 25%;"></div>
+          </div>
+          <input type="range" id="recNoiseGateSlider" class="slider-input" min="0" max="100" value="25" title="赤い線より大きい音が出た瞬間から記録を始めます（0%で押した瞬間からすぐ記録）">
+        </div>
+
+        <!-- 実験画像保存ボタン -->
+        <div class="main-controls" style="margin-top: 4px;">
+          <button id="btnSaveRecImage" class="btn-save" title="記録した波形全体を画像として保存します">
+            📸 記録画像を保存
+          </button>
         </div>
       </div>
     </section>
@@ -493,18 +589,18 @@
           </div>
         </div>
 
-        <!-- 4. 騒音混入防止（ノイズゲート） -->
+        <!-- 4. 騒音混入防止（ノイズゲート / トリガーしきい値） -->
         <div class="t-section">
           <div class="t-section-header">
-            <label class="t-section-label">🛡️ 教室の騒音混入防止（ノイズゲート）</label>
-            <span class="t-value-badge" id="teacherGateValText">2%</span>
+            <label class="t-section-label">🛡️ 教室の騒音混入防止（トリガーしきい値）</label>
+            <span class="t-value-badge" id="teacherGateValText">25%</span>
           </div>
-          <p class="t-section-desc">隣の班の話し声をカットし、実験音だけをきれいに捉えます。</p>
+          <p class="t-section-desc">ゲインの影響を受けない生の音量で判定します。赤い線を超えると10秒間（または停止まで）波形を拾い続け、まるごと波形記録の自動スタートにも連動します（0%で常時表示）。</p>
           <div class="meter-container" style="height: 18px; margin-bottom: 8px;">
             <div id="teacherMeterFill" class="meter-fill"></div>
-            <div id="teacherGateLine" class="gate-threshold-line" style="left: 2%;"></div>
+            <div id="teacherGateLine" class="gate-threshold-line" style="left: 25%;"></div>
           </div>
-          <input type="range" id="teacherGateSlider" class="slider-input" min="0" max="50" value="2">
+          <input type="range" id="teacherGateSlider" class="slider-input" min="0" max="100" value="25">
         </div>
 
         <!-- 5. カラーテーマ設定（10種類） -->
@@ -513,7 +609,7 @@
           <select id="teacherThemeSelect" class="select-box" style="width: 100%;">
             <option value="classic">① クラシック（黒×緑）</option>
             <option value="cyan">② サイバー・シアン</option>
-            <option value="medical">③ 心電図（メディカル）</option>
+            <option value="medical" selected>③ 心電図（メディカル）</option>
             <option value="paper">④ ノート方眼紙（白×青）</option>
             <option value="amber">⑤ レトロ・アンバー</option>
             <option value="chalkboard">⑥ 黒板・チョーク（学校風）</option>

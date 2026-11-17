@@ -134,10 +134,8 @@ export const THEMES = {
   }
 };
 
-/**
- * 現在選択されているテーマのオブジェクトを保持
- */
-let currentTheme = THEMES.classic;
+// デフォルトのテーマを「心電図（メディカル）」に設定
+let currentTheme = THEMES.medical;
 
 /**
  * テーマを切り替える関数
@@ -146,8 +144,8 @@ let currentTheme = THEMES.classic;
  */
 export function setTheme(themeId) {
   if (!THEMES[themeId]) {
-    console.warn(`[Theme] 指定されたテーマ '${themeId}' が存在しないためクラシックを適用します。`);
-    themeId = "classic";
+    console.warn(`[Theme] 指定されたテーマ '${themeId}' が存在しないため心電図テーマを適用します。`);
+    themeId = "medical";
   }
 
   currentTheme = THEMES[themeId];

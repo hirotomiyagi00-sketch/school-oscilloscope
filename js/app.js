@@ -18,15 +18,21 @@ import {
   getGain,
   setNoiseGateThreshold,
   getNoiseGateThreshold,
+  resetNoiseGateLatch,
+  isRawAudioAboveThreshold,
   detectPitch,
   getNoteDetails,
   startTone,
   stopTone,
   setToneFrequency,
   setToneType,
-  setLoopbackEnabled
+  setLoopbackEnabled,
+  startRecordingStream,
+  stopRecordingStream,
+  getAudioContextInstance
 } from "./audio.js";
 import { OscilloscopeRenderer } from "./oscilloscope.js";
+import { WaveformRecorder } from "./recorder.js";
 import { setTheme, getCurrentTheme } from "./themes.js";
 import {
   initSyncEngine,
@@ -51,6 +57,8 @@ const noiseGateSlider = document.getElementById("noiseGateSlider");
 const gateLine = document.getElementById("gateLine");
 const gateValText = document.getElementById("gateValText");
 const meterFill = document.getElementById("meterFill");
+const gateStatusBadge = document.getElementById("gateStatusBadge");
+const btnResetGateLatch = document.getElementById("btnResetGateLatch");
 const studentParamControls = document.getElementById("studentParamControls");
 
 // OSD要素
@@ -149,11 +157,40 @@ const btnPhaseReset = document.getElementById("btnPhaseReset");
 
 // --- 画面切り替えタブ関連の要素 ---
 const tabBtnWave = document.getElementById("tabBtnWave");
+const tabBtnRecord = document.getElementById("tabBtnRecord");
 const tabBtnTuner = document.getElementById("tabBtnTuner");
 const tabBtnGenerator = document.getElementById("tabBtnGenerator");
 const sectionWave = document.getElementById("sectionWave");
+const sectionRecord = document.getElementById("sectionRecord");
 const sectionTuner = document.getElementById("sectionTuner");
 const sectionGenerator = document.getElementById("sectionGenerator");
+
+// --- 【タブ4】まるごと波形きろく関連の要素 ---
+const recorderCanvas = document.getElementById("recorderCanvas");
+const osdRecMode = document.getElementById("osdRecMode");
+const osdRecA = document.getElementById("osdRecA");
+const osdRecB = document.getElementById("osdRecB");
+const recSlotACard = document.getElementById("recSlotACard");
+const recSlotBCard = document.getElementById("recSlotBCard");
+const recStatusA = document.getElementById("recStatusA");
+const recStatusB = document.getElementById("recStatusB");
+const btnRecordSlotA = document.getElementById("btnRecordSlotA");
+const btnRecordSlotB = document.getElementById("btnRecordSlotB");
+const btnRecordSlotAText = document.getElementById("btnRecordSlotAText");
+const btnRecordSlotBText = document.getElementById("btnRecordSlotBText");
+const recIconA = document.getElementById("recIconA");
+const recIconB = document.getElementById("recIconB");
+const btnPlaySlotA = document.getElementById("btnPlaySlotA");
+const btnPlaySlotB = document.getElementById("btnPlaySlotB");
+const btnClearRecSlotA = document.getElementById("btnClearRecSlotA");
+const btnClearRecSlotB = document.getElementById("btnClearRecSlotB");
+const btnRecModeSplit = document.getElementById("btnRecModeSplit");
+const btnRecModeOverlay = document.getElementById("btnRecModeOverlay");
+const btnSaveRecImage = document.getElementById("btnSaveRecImage");
+const recNoiseGateSlider = document.getElementById("recNoiseGateSlider");
+const recGateLine = document.getElementById("recGateLine");
+const recGateValText = document.getElementById("recGateValText");
+const recMeterFill = document.getElementById("recMeterFill");
 
 // --- 【タブ2】チューナー関連の要素 ---
 const tunerSolfege = document.getElementById("tunerSolfege");
@@ -178,12 +215,14 @@ const btnLoopback = document.getElementById("btnLoopback");
 
 // レンダラーのインスタンス化
 const renderer = new OscilloscopeRenderer(canvas);
+const waveformRecorder = new WaveformRecorder(recorderCanvas);
 
 // 状態変数
 let isRunning = false;
 let isFrozen = false;
 let lastAudioData = null;
-let currentTab = "wave"; // "wave" | "tuner" | "generator"
+let currentTab = "wave"; // "wave" | "record" | "tuner" | "generator"
+let currentExportSource = "oscilloscope"; // "oscilloscope" | "recorder"
 let isTonePlaying = false;
 let currentToneFreq = 440;
 let currentToneType = "sine";
@@ -221,19 +260,75 @@ function estimateFrequency(buffer, sampleRate) {
 }
 
 /**
+ * ノイズゲート（トリガー）の現在状態バッジとリセットボタンを更新する関数
+ * 【なぜ状態の可視化が必要なのか】
+ * 「今は音を待っている状態なのか」「10秒ラッチで計測中なのか」を生徒がひと目で把握し、
+ * 「なぜ波形が水平線なのか／いつ待機に戻るのか」で迷わないようにするため。
+ *
+ * @param {Object|null} audioData - getAudioData()の戻り値
+ */
+function updateGateStatusUI(audioData) {
+  if (!gateStatusBadge) return;
+  const threshold = getNoiseGateThreshold();
+
+  if (threshold <= 0 || (audioData && audioData.isBypassed)) {
+    gateStatusBadge.textContent = "📡 常時表示（待機なし）";
+    gateStatusBadge.className = "gate-status-badge bypass";
+    if (btnResetGateLatch) btnResetGateLatch.style.display = "none";
+    return;
+  }
+
+  if (audioData && audioData.isLatched) {
+    const remainSec = (audioData.gateRemainingMs / 1000).toFixed(1);
+    gateStatusBadge.textContent = `🟢 計測中（あと ${remainSec}s）`;
+    gateStatusBadge.className = "gate-status-badge active";
+    if (btnResetGateLatch) btnResetGateLatch.style.display = "inline-flex";
+  } else {
+    gateStatusBadge.textContent = "⏳ 待機中（赤い線以上で開始）";
+    gateStatusBadge.className = "gate-status-badge waiting";
+    if (btnResetGateLatch) btnResetGateLatch.style.display = "none";
+  }
+}
+
+/**
+ * マイク初期化とメイン描画ループを一括開始する共通ヘルパー
+ * 【なぜ共通化するのか】
+ * タブ1の「実験をはじめる」ボタンだけでなく、タブ2「まるごと波形きろく」の録音開始ボタンから
+ * 直接マイクを起動する際にも確実に同じ初期化フローを通すため（未定義呼び出しバグ防止）。
+ */
+async function ensureAudioStarted() {
+  if (isRunning) return true;
+  await initAudio();
+  isRunning = true;
+  if (startOverlay) startOverlay.style.display = "none";
+  requestAnimationFrame(animationLoop);
+  return true;
+}
+
+/**
  * 毎フレームの描画ループ (60fps)
  */
 function animationLoop() {
   if (!isRunning) return;
 
-  // 最新の音声解析データを取得
-  lastAudioData = getAudioData();
+  // 最新の音声解析データを取得（一時停止中は新規トリガー発火を抑止）
+  lastAudioData = getAudioData({ freezeLatch: isFrozen });
 
-  // 音量メーターの更新（0〜100%にクランプ）
-  const volumePercent = Math.min(100, Math.round(lastAudioData.rms * 300));
-  meterFill.style.width = `${volumePercent}%`;
-  if (teacherMeterFill) {
-    teacherMeterFill.style.width = `${volumePercent}%`;
+  // 音量メーターの更新（生入力ベースの最適化%を全タブ・先生パネルへ共通反映）
+  const volumePercent = lastAudioData.meterPercent;
+  if (meterFill) meterFill.style.width = `${volumePercent}%`;
+  if (recMeterFill) recMeterFill.style.width = `${volumePercent}%`;
+  if (teacherMeterFill) teacherMeterFill.style.width = `${volumePercent}%`;
+
+  // タブ1のトリガー状態表示を更新
+  updateGateStatusUI(lastAudioData);
+
+  // 【まるごと波形きろく】トリガー待機中なら60fpsの高速判定でアタックを逃さず記録開始
+  if (waveformRecorder.recordingState === "waiting_a" || waveformRecorder.recordingState === "waiting_b") {
+    if (isRawAudioAboveThreshold()) {
+      waveformRecorder.triggerRecording();
+      updateRecordingUI();
+    }
   }
 
   // 周波数の推定とOSD更新（ノイズゲート超えかつ停止中でない場合）
@@ -244,6 +339,8 @@ function animationLoop() {
     } else {
       osdFreq.textContent = `推定: --- Hz`;
     }
+  } else if (!isFrozen && !lastAudioData.isAboveGate) {
+    osdFreq.textContent = `推定: --- Hz`;
   }
 
   // 【波形タブ】オシロスコープ画面の描画実行
@@ -265,10 +362,7 @@ function animationLoop() {
 btnStart.addEventListener("click", async () => {
   try {
     btnStart.textContent = "⌛ マイクを準備中...";
-    await initAudio();
-    isRunning = true;
-    startOverlay.style.display = "none";
-    requestAnimationFrame(animationLoop);
+    await ensureAudioStarted();
   } catch (error) {
     btnStart.textContent = "🎤 実験をはじめる（マイクをON）";
     // 単純なアラートではなく、Chromebook/iPad別の分かりやすいガイドを表示
@@ -299,6 +393,8 @@ if (btnRetryMic) {
 // 2. ピタッと停止（一時停止 / ホールド）ボタン
 btnFreeze.addEventListener("click", () => {
   isFrozen = !isFrozen;
+  // 停止時・再開時ともにトリガーラッチをリセットし、再開後はクリーンに待機状態からやり直す
+  resetNoiseGateLatch();
 
   if (isFrozen) {
     // 停止時：現在のバッファを固定保持（画面上の邪魔な文字は出さず、ボタンをオレンジ色に点灯させて再開を促す）
@@ -317,6 +413,14 @@ btnFreeze.addEventListener("click", () => {
     if (freezeIndicator) freezeIndicator.style.display = "none";
   }
 });
+
+// 計測中から手動で「待機状態」に戻すボタン
+if (btnResetGateLatch) {
+  btnResetGateLatch.addEventListener("click", () => {
+    resetNoiseGateLatch();
+    updateGateStatusUI(null);
+  });
+}
 
 // --------------------------------------------------------------------------
 // 先生用設定・コントロールパネル ＆ 生徒画面パラメータ同期処理
@@ -354,14 +458,14 @@ function showToast(message) {
  */
 function generateStudentUrl(customParams = {}) {
   const url = new URL(window.location.href.split("?")[0]);
-  const curThemeId = document.documentElement.getAttribute("data-theme") || "classic";
+  const curThemeId = document.documentElement.getAttribute("data-theme") || "medical";
 
   const config = {
     gain: customParams.gain !== undefined ? customParams.gain : getGain(),
     w: customParams.w !== undefined ? customParams.w : renderer.getHorizontalDivs(),
     t: customParams.t !== undefined ? customParams.t : renderer.timeDivMs,
     v: customParams.v !== undefined ? customParams.v : renderer.voltsDiv,
-    gate: customParams.gate !== undefined ? customParams.gate : Math.round(getNoiseGateThreshold() * 100),
+    gate: customParams.gate !== undefined ? customParams.gate : Math.round(getNoiseGateThreshold()),
     th: customParams.th !== undefined ? customParams.th : curThemeId
   };
 
@@ -408,14 +512,14 @@ async function copyUrlToClipboard(url, successMsg = "📋 生徒用リンクを�
  */
 function syncCurrentConfigToStudents() {
   if (isTeacherModeUnlocked) {
-    const curThemeId = document.documentElement.getAttribute("data-theme") || "classic";
+    const curThemeId = document.documentElement.getAttribute("data-theme") || "medical";
     broadcastConfig({
       theme: curThemeId,
       gain: getGain(),
       horizontalDivs: renderer.getHorizontalDivs(),
       timeDiv: renderer.timeDivMs,
       voltsDiv: renderer.voltsDiv,
-      noiseGate: Math.round(getNoiseGateThreshold() * 100)
+      noiseGate: Math.round(getNoiseGateThreshold())
     });
   }
 }
@@ -549,31 +653,39 @@ function applyVoltsDiv(val, isSyncEvent = false) {
 }
 
 /**
- * ノイズゲート（混入防止しきい値）を適用・同期する関数
- * 【なぜ生徒画面と先生画面を連動させるのか】
- * 先生が指定した初期推奨値（URLパラメータ等）を生徒のスライダーへ初期反映しつつ、
- * 生徒自身も机の環境に合わせていつでも自由に微調整できるようにするため。
+ * ノイズゲート（トリガーしきい値）をアプリ全体へ適用・同期する関数
+ * 【なぜ全タブ・先生パネルを同時に更新するのか】
+ * タブ1（波形観察）、タブ2（まるごと波形きろく）、先生パネルのどのスライダーから変更しても、
+ * すべての画面で同じしきい値（赤い線）と状態表示が即座に反映されるようにするため。
  * 
- * @param {number} val - 0〜50 (%)
+ * @param {number} val - 0〜100 (%)
  */
 function applyNoiseGate(val, isSyncEvent = false) {
-  const percent = Math.max(0, Math.min(50, parseInt(val, 10) || 0));
-  setNoiseGateThreshold(percent / 100);
+  const parsed = parseInt(val, 10);
+  const percent = Math.max(0, Math.min(100, isNaN(parsed) ? 0 : parsed));
+  setNoiseGateThreshold(percent);
 
-  // 生徒側UIの同期（初期値や先生の設定が確実に反映される）
+  // タブ1（生徒画面）UIの同期
   if (gateLine) gateLine.style.left = `${percent}%`;
   if (gateValText) gateValText.textContent = `${percent}%`;
   if (noiseGateSlider) {
-    if (percent > parseInt(noiseGateSlider.max, 10)) {
-      noiseGateSlider.max = percent;
-    }
     noiseGateSlider.value = percent;
   }
 
-  // 先生側UIの同期
+  // タブ2（まるごと波形きろく）UIの同期
+  if (recGateLine) recGateLine.style.left = `${percent}%`;
+  if (recGateValText) recGateValText.textContent = `${percent}%`;
+  if (recNoiseGateSlider) {
+    recNoiseGateSlider.value = percent;
+  }
+
+  // 先生パネルUIの同期
   if (teacherGateLine) teacherGateLine.style.left = `${percent}%`;
   if (teacherGateValText) teacherGateValText.textContent = `${percent}%`;
   if (teacherGateSlider) teacherGateSlider.value = percent;
+
+  // 状態バッジも即時更新（マイク未起動時や停止中にも「常時表示 / 待機中」がすぐ分かる）
+  updateGateStatusUI(null);
 
   if (!isSyncEvent) {
     syncCurrentConfigToStudents();
@@ -596,28 +708,28 @@ function applyScenePreset(presetKey) {
       applyHorizontalDivs(20);
       applyTimeDiv(0.5);
       applyVoltsDiv(0.2);
-      applyNoiseGate(2);
+      applyNoiseGate(20);
       break;
     case "voice": // 声・歌声の観察: 複雑な波形を広めに観察
       applyGain(1.0);
       applyHorizontalDivs(40);
       applyTimeDiv(2.0);
       applyVoltsDiv(0.5);
-      applyNoiseGate(3);
+      applyNoiseGate(30);
       break;
     case "monochord": // 弦・モノコード: 基本波形と高調波を捉える
       applyGain(2.0);
       applyHorizontalDivs(20);
       applyTimeDiv(1.0);
       applyVoltsDiv(0.5);
-      applyNoiseGate(2);
+      applyNoiseGate(25);
       break;
     case "loud": // 大音量・打楽器: 画面からはみ出さない低感度設定 ＆ 全体表示
       applyGain(0.5);
       applyHorizontalDivs(50);
       applyTimeDiv(5.0);
       applyVoltsDiv(1.0);
-      applyNoiseGate(5);
+      applyNoiseGate(45);
       break;
   }
 }
@@ -697,19 +809,19 @@ btnPresetLinkCopies.forEach(btn => {
     let presetLabel = "";
     switch (presetKey) {
       case "tuning-fork":
-        params = { gain: 5.0, w: 20, t: 0.5, v: 0.2, gate: 2 };
+        params = { gain: 5.0, w: 20, t: 0.5, v: 0.2, gate: 20 };
         presetLabel = "おんさ実験用";
         break;
       case "voice":
-        params = { gain: 1.0, w: 40, t: 2.0, v: 0.5, gate: 3 };
+        params = { gain: 1.0, w: 40, t: 2.0, v: 0.5, gate: 30 };
         presetLabel = "声・歌声観察用";
         break;
       case "monochord":
-        params = { gain: 2.0, w: 20, t: 1.0, v: 0.5, gate: 2 };
+        params = { gain: 2.0, w: 20, t: 1.0, v: 0.5, gate: 25 };
         presetLabel = "弦・モノコード用";
         break;
       case "loud":
-        params = { gain: 0.5, w: 50, t: 5.0, v: 1.0, gate: 5 };
+        params = { gain: 0.5, w: 50, t: 5.0, v: 1.0, gate: 45 };
         presetLabel = "大音量・打楽器用";
         break;
     }
@@ -766,6 +878,7 @@ teacherGateSlider.addEventListener("input", (e) => {
 // 先生側 カラーテーマ変更
 teacherThemeSelect.addEventListener("change", (e) => {
   setTheme(e.target.value);
+  waveformRecorder.draw();
   syncCurrentConfigToStudents();
   updateShareUrlPreview();
 });
@@ -905,7 +1018,10 @@ initSyncEngine((config) => {
 
   // 【生徒の一時停止保護ロジック】
   // 生徒がピタッと停止してノートに記録中の場合は、記録中の波形データ（frozenBuffer）を保護
-  if (config.theme) setTheme(config.theme);
+  if (config.theme) {
+    setTheme(config.theme);
+    waveformRecorder.draw();
+  }
   if (config.gain !== undefined) applyGain(config.gain, true);
   if (config.horizontalDivs !== undefined) applyHorizontalDivs(config.horizontalDivs, true);
   if (config.timeDiv !== undefined) applyTimeDiv(config.timeDiv, true);
@@ -991,6 +1107,7 @@ function applyUrlParams() {
     const th = params.get("th");
     if (th) {
       setTheme(th);
+      waveformRecorder.draw();
       if (teacherThemeSelect) teacherThemeSelect.value = th;
     }
   }
@@ -1005,7 +1122,9 @@ function applyUrlParams() {
 
 // 起動時のURLパラメータ適用とプレビューURL初期化
 applyUrlParams();
+updateGateStatusUI(null);
 updateShareUrlPreview();
+waveformRecorder.draw(); // 初期のガイダンスとグリッドを描画
 
 // --- 生徒画面側（解放時）のイベントリスナー ---
 timeDivSelect.addEventListener("change", (e) => {
@@ -1020,10 +1139,26 @@ noiseGateSlider.addEventListener("input", (e) => {
   applyNoiseGate(parseInt(e.target.value, 10));
 });
 
+if (recNoiseGateSlider) {
+  recNoiseGateSlider.addEventListener("input", (e) => {
+    const val = parseInt(e.target.value, 10);
+    applyNoiseGate(val);
+    // 待機中にしきい値を0%へ下げたら即座に記録スタートする
+    if (val <= 0 && (waveformRecorder.recordingState === "waiting_a" || waveformRecorder.recordingState === "waiting_b")) {
+      waveformRecorder.triggerRecording();
+      updateRecordingUI();
+    }
+  });
+}
+
 // --- 7. 波形比較（音A・音Bスロット）イベント制御 ---
 
 // 【音Aの保存（何度でも上書き可能）】
 btnSaveSlotA.addEventListener("click", () => {
+  if (!isFrozen && lastAudioData && !lastAudioData.isAboveGate) {
+    showToast("⏳ まだ音を検知していません（赤い線より大きい音を鳴らしてから保存してください）");
+    return;
+  }
   // 一時停止中の場合は停止波形、動作中の場合は最新の音声バッファを取得
   const currentBuffer = isFrozen && renderer.frozenBuffer ? renderer.frozenBuffer : (lastAudioData ? lastAudioData.rawData : null);
   if (!currentBuffer) {
@@ -1050,6 +1185,10 @@ btnClearSlotA.addEventListener("click", () => {
 
 // 【音Bの保存（何度でも上書き可能）】
 btnSaveSlotB.addEventListener("click", () => {
+  if (!isFrozen && lastAudioData && !lastAudioData.isAboveGate) {
+    showToast("⏳ まだ音を検知していません（赤い線より大きい音を鳴らしてから保存してください）");
+    return;
+  }
   const currentBuffer = isFrozen && renderer.frozenBuffer ? renderer.frozenBuffer : (lastAudioData ? lastAudioData.rawData : null);
   if (!currentBuffer) {
     alert("まずマイクをONにして音を出してください。");
@@ -1169,8 +1308,9 @@ window.addEventListener("touchend", handleDragEnd);
 
 // --- 9. 画像保存モーダルおよび合成PNG出力処理 ---
 
-// モーダルを開く
+// モーダルを開く（オシロスコープ画面用）
 btnSaveImage.addEventListener("click", () => {
+  currentExportSource = "oscilloscope";
   // アラートと入力をリセット
   alertName.classList.remove("visible");
   alertCond.classList.remove("visible");
@@ -1221,8 +1361,12 @@ btnConfirmSave.addEventListener("click", () => {
   btnConfirmSave.textContent = "💾 保存中...";
 
   try {
-    // 合成画像の生成とダウンロード
-    exportImageWithMetadata(name, cond);
+    // 保存元に応じた合成画像の生成とダウンロード
+    if (currentExportSource === "recorder") {
+      exportRecorderImageWithMetadata(name, cond);
+    } else {
+      exportImageWithMetadata(name, cond);
+    }
   } catch (err) {
     console.error("[Export] 画像出力エラー:", err);
     alert("画像の保存中にエラーが発生しました: " + err.message);
@@ -1388,6 +1532,117 @@ function exportImageWithMetadata(studentName, experimentCond) {
   }
 }
 
+/**
+ * まるごと波形きろくの全体波形画像（生徒名・実験条件・記録秒数入り）を出力する関数
+ * 【なぜこの関数が必要なのか】
+ * - ボタンを押してから離すまでの数秒間の全体波形と2音の比較結果を、
+ *   生徒のレポート提出用ポートフォリオ画像として美しく保存できるようにするため。
+ * 
+ * @param {string} studentName - 生徒の名前
+ * @param {string} experimentCond - 実験の条件
+ */
+function exportRecorderImageWithMetadata(studentName, experimentCond) {
+  const exportCanvas = document.createElement("canvas");
+  const exportCtx = exportCanvas.getContext("2d");
+
+  const originalWidth = recorderCanvas.width;
+  const originalHeight = recorderCanvas.height;
+
+  // ヘッダー帯の高さを定義（画面全体の約14%）
+  const headerHeight = Math.floor(originalHeight * 0.14);
+
+  exportCanvas.width = originalWidth;
+  exportCanvas.height = originalHeight + headerHeight;
+
+  const currentTheme = getCurrentTheme();
+
+  // 1. ヘッダー帯の背景を描画
+  exportCtx.fillStyle = currentTheme.bg;
+  exportCtx.fillRect(0, 0, exportCanvas.width, headerHeight);
+
+  // 2. ヘッダー情報の文字を描画
+  exportCtx.fillStyle = currentTheme.waveMain;
+  const fontSize = Math.max(16, Math.floor(headerHeight * 0.28));
+  exportCtx.font = `bold ${fontSize}px sans-serif`;
+
+  const dateStr = new Date().toLocaleString("ja-JP", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+
+  // 1行目: なまえ & 日時
+  const line1Y = Math.floor(headerHeight * 0.40);
+  exportCtx.fillText(`👤 なまえ: ${studentName}`, 20, line1Y);
+  const dateWidth = exportCtx.measureText(`📅 ${dateStr}`).width;
+  exportCtx.fillText(`📅 ${dateStr}`, exportCanvas.width - dateWidth - 20, line1Y);
+
+  // 2行目: 実験条件 & 全波形記録情報
+  const line2Y = Math.floor(headerHeight * 0.82);
+  exportCtx.font = `${Math.floor(fontSize * 0.85)}px sans-serif`;
+  exportCtx.fillStyle = currentTheme.osdColor || "#64748b";
+  exportCtx.fillText(`🔬 実験条件: ${experimentCond}`, 20, line2Y);
+
+  const durA = waveformRecorder.hasData("A") ? `${waveformRecorder.getDuration("A").toFixed(2)}s` : "未記録";
+  const durB = waveformRecorder.hasData("B") ? `${waveformRecorder.getDuration("B").toFixed(2)}s` : "未記録";
+  const modeName = waveformRecorder.displayMode === "split" ? "上下並列" : "重ね合わせ";
+  const recordInfo = `[まるごと波形: ${modeName}] [音A: ${durA}] [音B: ${durB}]`;
+  const infoWidth = exportCtx.measureText(recordInfo).width;
+  exportCtx.fillText(recordInfo, exportCanvas.width - infoWidth - 20, line2Y);
+
+  // 3. 境界線の描画
+  exportCtx.strokeStyle = currentTheme.grid;
+  exportCtx.lineWidth = 2;
+  exportCtx.beginPath();
+  exportCtx.moveTo(0, headerHeight);
+  exportCtx.lineTo(exportCanvas.width, headerHeight);
+  exportCtx.stroke();
+
+  // 4. まるごと波形Canvasの内容を転写
+  exportCtx.drawImage(recorderCanvas, 0, headerHeight);
+
+  // 5. 安全なファイル名を生成
+  const safeName = studentName.replace(/[\\/:*?"<>|\r\n\t]/g, "_").trim().slice(0, 50) || "生徒";
+  const safeCond = experimentCond.replace(/[\\/:*?"<>|\r\n\t]/g, "_").trim().slice(0, 50) || "全波形実験";
+  const fileName = `${safeName}_まるごと波形_${safeCond}.png`;
+
+  // ダウンロード発火
+  const triggerDownload = (url, name) => {
+    const link = document.createElement("a");
+    link.style.display = "none";
+    link.download = name;
+    link.href = url;
+    document.body.appendChild(link);
+    link.click();
+    setTimeout(() => {
+      if (link.parentNode) link.parentNode.removeChild(link);
+    }, 100);
+  };
+
+  if (exportCanvas.toBlob) {
+    exportCanvas.toBlob((blob) => {
+      if (!blob) {
+        try {
+          triggerDownload(exportCanvas.toDataURL("image/png"), fileName);
+          showToast(`📸 「${fileName}」を保存しました`);
+        } catch (e) {
+          alert("画像の保存に失敗しました: " + e.message);
+        }
+        return;
+      }
+      const blobUrl = URL.createObjectURL(blob);
+      triggerDownload(blobUrl, fileName);
+      showToast(`📸 「${fileName}」を保存しました`);
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+    }, "image/png");
+  } else {
+    triggerDownload(exportCanvas.toDataURL("image/png"), fileName);
+    showToast(`📸 「${fileName}」を保存しました`);
+  }
+}
+
 // ==========================================================================
 // 10. 画面切り替えタブ制御
 // ==========================================================================
@@ -1398,30 +1653,319 @@ function exportImageWithMetadata(studentName, experimentCond) {
  * タブを切り替えても、生徒が波形タブで一時停止（ホールド）した波形や、
  * 記録した音A・音Bのデータが消えないようにするため。
  * 
- * @param {string} targetTab - "wave" | "tuner" | "generator"
+ * @param {string} targetTab - "wave" | "record" | "tuner" | "generator"
  */
 function switchTab(targetTab) {
   currentTab = targetTab;
 
   // タブボタンのアクティブ状態を更新
   tabBtnWave.classList.toggle("active", targetTab === "wave");
+  tabBtnRecord.classList.toggle("active", targetTab === "record");
   tabBtnTuner.classList.toggle("active", targetTab === "tuner");
   tabBtnGenerator.classList.toggle("active", targetTab === "generator");
 
   // セクションの表示・非表示を切り替え
   sectionWave.style.display = targetTab === "wave" ? "flex" : "none";
+  sectionRecord.style.display = targetTab === "record" ? "flex" : "none";
   sectionTuner.style.display = targetTab === "tuner" ? "flex" : "none";
   sectionGenerator.style.display = targetTab === "generator" ? "flex" : "none";
 
-  // 波形タブに戻ったときはCanvasのサイズを再計算
+  // 波形タブまたは記録タブに戻ったときはCanvasのサイズを再計算
   if (targetTab === "wave") {
     renderer.handleResize();
+  } else if (targetTab === "record") {
+    waveformRecorder.handleResize();
+    waveformRecorder.draw();
   }
 }
 
 tabBtnWave.addEventListener("click", () => switchTab("wave"));
+tabBtnRecord.addEventListener("click", () => switchTab("record"));
 tabBtnTuner.addEventListener("click", () => switchTab("tuner"));
 tabBtnGenerator.addEventListener("click", () => switchTab("generator"));
+
+// ==========================================================================
+// 10.1 【タブ4】まるごと波形きろく（連続録音・2音比較）制御
+// ==========================================================================
+
+let recordTimerInterval = null;
+
+/**
+ * 録音状態およびスロットカードのUI表示を更新する関数
+ * 【なぜ頻繁に更新するのか】
+ * 生徒が録音中の経過秒数（何秒間音を出しているか）をリアルタイムに把握できるようにするため。
+ */
+function updateRecordingUI() {
+  const state = waveformRecorder.recordingState;
+  const isWaitA = state === "waiting_a";
+  const isWaitB = state === "waiting_b";
+  const isRecA = state === "recording_a";
+  const isRecB = state === "recording_b";
+  const duration = waveformRecorder.getRecordingDurationSec();
+
+  // --- 音AスロットのUI更新 ---
+  if (isWaitA) {
+    btnRecordSlotA.classList.remove("recording");
+    btnRecordSlotA.classList.add("waiting");
+    recIconA.textContent = "⏳";
+    btnRecordSlotAText.textContent = "音待ち中…（取消）";
+    recStatusA.textContent = "⏳ 赤い線以上の音で開始";
+    recStatusA.style.color = "#f59e0b";
+  } else if (isRecA) {
+    btnRecordSlotA.classList.remove("waiting");
+    btnRecordSlotA.classList.add("recording");
+    recIconA.textContent = "⏹️";
+    btnRecordSlotAText.textContent = `停止 (${duration.toFixed(1)}s)`;
+    recStatusA.textContent = `🔴 記録中 (${duration.toFixed(1)}s)`;
+    recStatusA.style.color = "#ef4444";
+  } else {
+    btnRecordSlotA.classList.remove("recording", "waiting");
+    recIconA.textContent = "🔴";
+    btnRecordSlotAText.textContent = waveformRecorder.hasData("A") ? "音Aを再記録" : "音Aのきろく開始";
+    if (waveformRecorder.hasData("A")) {
+      recStatusA.textContent = `${waveformRecorder.getDuration("A").toFixed(2)}秒 記録済み`;
+      recStatusA.style.color = "#3b82f6";
+      btnPlaySlotA.style.display = "inline-flex";
+      btnClearRecSlotA.style.display = "flex";
+      recSlotACard.classList.add("has-data");
+    } else {
+      recStatusA.textContent = "未記録";
+      recStatusA.style.color = "var(--text-muted)";
+      btnPlaySlotA.style.display = "none";
+      btnClearRecSlotA.style.display = "none";
+      recSlotACard.classList.remove("has-data");
+    }
+  }
+
+  // --- 音BスロットのUI更新 ---
+  if (isWaitB) {
+    btnRecordSlotB.classList.remove("recording");
+    btnRecordSlotB.classList.add("waiting");
+    recIconB.textContent = "⏳";
+    btnRecordSlotBText.textContent = "音待ち中…（取消）";
+    recStatusB.textContent = "⏳ 赤い線以上の音で開始";
+    recStatusB.style.color = "#f59e0b";
+  } else if (isRecB) {
+    btnRecordSlotB.classList.remove("waiting");
+    btnRecordSlotB.classList.add("recording");
+    recIconB.textContent = "⏹️";
+    btnRecordSlotBText.textContent = `停止 (${duration.toFixed(1)}s)`;
+    recStatusB.textContent = `🔴 記録中 (${duration.toFixed(1)}s)`;
+    recStatusB.style.color = "#ef4444";
+  } else {
+    btnRecordSlotB.classList.remove("recording", "waiting");
+    recIconB.textContent = "🔴";
+    btnRecordSlotBText.textContent = waveformRecorder.hasData("B") ? "音Bを再記録" : "音Bのきろく開始";
+    if (waveformRecorder.hasData("B")) {
+      recStatusB.textContent = `${waveformRecorder.getDuration("B").toFixed(2)}秒 記録済み`;
+      recStatusB.style.color = "#ef4444";
+      btnPlaySlotB.style.display = "inline-flex";
+      btnClearRecSlotB.style.display = "flex";
+      recSlotBCard.classList.add("has-data");
+    } else {
+      recStatusB.textContent = "未記録";
+      recStatusB.style.color = "var(--text-muted)";
+      btnPlaySlotB.style.display = "none";
+      btnClearRecSlotB.style.display = "none";
+      recSlotBCard.classList.remove("has-data");
+    }
+  }
+
+  // --- OSD情報の更新 ---
+  const hasA = waveformRecorder.hasData("A");
+  const hasB = waveformRecorder.hasData("B");
+  osdRecA.textContent = hasA ? `音A: ${waveformRecorder.getDuration("A").toFixed(2)}s` : "音A: 未記録";
+  osdRecB.textContent = hasB ? `音B: ${waveformRecorder.getDuration("B").toFixed(2)}s` : "音B: 未記録";
+  osdRecMode.textContent = waveformRecorder.displayMode === "split" ? "モード: 上下に並べる" : "モード: 重ね合わせ";
+}
+
+/**
+ * 録音（またはトリガー待機）を安全に開始する関数
+ * @param {'A'|'B'} slot - 記録対象スロット
+ */
+async function startRecordingSlot(slot) {
+  // マイク未開始の場合は共通ヘルパーで開始
+  if (!isRunning) {
+    try {
+      await ensureAudioStarted();
+    } catch (e) {
+      alert("マイクを有効にしてください。");
+      return;
+    }
+  }
+
+  // しきい値が0%より大きい場合は「音を鳴らした瞬間から記録開始」の待機モードで起動
+  const waitForTrigger = getNoiseGateThreshold() > 0;
+  waveformRecorder.startRecording(slot, waitForTrigger);
+
+  // 録音ストリームを開始（待機中もプリロール用チャンクを受け取り、閾値超過を二重監視）
+  startRecordingStream((chunk, sampleRate) => {
+    if (waveformRecorder.recordingState === "waiting_a" || waveformRecorder.recordingState === "waiting_b") {
+      if (isRawAudioAboveThreshold()) {
+        waveformRecorder.triggerRecording();
+        updateRecordingUI();
+      }
+    }
+    const isOverLimit = waveformRecorder.addAudioChunk(chunk, sampleRate);
+    if (isOverLimit) {
+      // 15秒の上限に達した場合は安全に自動停止
+      stopRecordingSlot();
+    }
+  });
+
+  // タイマーインターバル開始（100msごとにUIを更新）
+  if (recordTimerInterval) clearInterval(recordTimerInterval);
+  recordTimerInterval = setInterval(() => {
+    updateRecordingUI();
+  }, 100);
+
+  updateRecordingUI();
+}
+
+/**
+ * 録音を停止してデータを確定する関数
+ */
+function stopRecordingSlot() {
+  if (recordTimerInterval) {
+    clearInterval(recordTimerInterval);
+    recordTimerInterval = null;
+  }
+  stopRecordingStream();
+  waveformRecorder.stopRecording();
+  updateRecordingUI();
+}
+
+/**
+ * トリガー待機状態を保存せずキャンセルする関数
+ */
+function cancelRecordingSlot() {
+  if (recordTimerInterval) {
+    clearInterval(recordTimerInterval);
+    recordTimerInterval = null;
+  }
+  stopRecordingStream();
+  waveformRecorder.cancelRecording();
+  updateRecordingUI();
+}
+
+// 記録ボタン（音A）
+btnRecordSlotA.addEventListener("click", () => {
+  const st = waveformRecorder.recordingState;
+  if (st === "recording_a") {
+    stopRecordingSlot();
+  } else if (st === "waiting_a") {
+    cancelRecordingSlot();
+  } else {
+    if (st === "recording_b") {
+      stopRecordingSlot();
+    } else if (st === "waiting_b") {
+      cancelRecordingSlot();
+    }
+    startRecordingSlot("A");
+  }
+});
+
+// 記録ボタン（音B）
+btnRecordSlotB.addEventListener("click", () => {
+  const st = waveformRecorder.recordingState;
+  if (st === "recording_b") {
+    stopRecordingSlot();
+  } else if (st === "waiting_b") {
+    cancelRecordingSlot();
+  } else {
+    if (st === "recording_a") {
+      stopRecordingSlot();
+    } else if (st === "waiting_a") {
+      cancelRecordingSlot();
+    }
+    startRecordingSlot("B");
+  }
+});
+
+// 音Aの消去
+btnClearRecSlotA.addEventListener("click", () => {
+  waveformRecorder.clearSlot("A");
+  updateRecordingUI();
+});
+
+// 音Bの消去
+btnClearRecSlotB.addEventListener("click", () => {
+  waveformRecorder.clearSlot("B");
+  updateRecordingUI();
+});
+
+// 試聴（再生）ボタン - 音A
+btnPlaySlotA.addEventListener("click", () => {
+  if (waveformRecorder.playbackSlot === "A") {
+    waveformRecorder.stopPlayback();
+    btnPlaySlotA.classList.remove("playing");
+    btnPlaySlotA.textContent = "▶ 聴く";
+  } else {
+    const ctx = getAudioContextInstance();
+    btnPlaySlotA.classList.add("playing");
+    btnPlaySlotA.textContent = "⏹️ 停止";
+    btnPlaySlotB.classList.remove("playing");
+    btnPlaySlotB.textContent = "▶ 聴く";
+
+    waveformRecorder.play("A", ctx, null, () => {
+      btnPlaySlotA.classList.remove("playing");
+      btnPlaySlotA.textContent = "▶ 聴く";
+    });
+  }
+});
+
+// 試聴（再生）ボタン - 音B
+btnPlaySlotB.addEventListener("click", () => {
+  if (waveformRecorder.playbackSlot === "B") {
+    waveformRecorder.stopPlayback();
+    btnPlaySlotB.classList.remove("playing");
+    btnPlaySlotB.textContent = "▶ 聴く";
+  } else {
+    const ctx = getAudioContextInstance();
+    btnPlaySlotB.classList.add("playing");
+    btnPlaySlotB.textContent = "⏹️ 停止";
+    btnPlaySlotA.classList.remove("playing");
+    btnPlaySlotA.textContent = "▶ 聴く";
+
+    waveformRecorder.play("B", ctx, null, () => {
+      btnPlaySlotB.classList.remove("playing");
+      btnPlaySlotB.textContent = "▶ 聴く";
+    });
+  }
+});
+
+// 比較モード切替 - 上下に並べる
+btnRecModeSplit.addEventListener("click", () => {
+  btnRecModeSplit.classList.add("active");
+  btnRecModeOverlay.classList.remove("active");
+  waveformRecorder.setDisplayMode("split");
+  updateRecordingUI();
+});
+
+// 比較モード切替 - 重ね合わせ
+btnRecModeOverlay.addEventListener("click", () => {
+  btnRecModeOverlay.classList.add("active");
+  btnRecModeSplit.classList.remove("active");
+  waveformRecorder.setDisplayMode("overlay");
+  updateRecordingUI();
+});
+
+// まるごと波形きろくの画像保存ボタン
+btnSaveRecImage.addEventListener("click", () => {
+  if (!waveformRecorder.hasData("A") && !waveformRecorder.hasData("B")) {
+    alert("まず「音A」または「音B」の波形を記録してください。");
+    return;
+  }
+  currentExportSource = "recorder";
+  alertName.classList.remove("visible");
+  alertCond.classList.remove("visible");
+  inputStudentName.classList.remove("error");
+  inputExperimentCond.classList.remove("error");
+
+  saveModal.classList.add("active");
+  inputStudentName.focus();
+});
+
 
 // ==========================================================================
 // 11. 【タブ2】音の高さしらべ（チューナー）表示更新

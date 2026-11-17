@@ -13,9 +13,11 @@
 
 let audioContext = null;
 let analyserNode = null;
+let rawAnalyserNode = null;
 let gainNode = null;
 let microphoneStream = null;
 let timeDomainBuffer = null;
+let rawTimeDomainBuffer = null;
 
 // マイク入力ゲイン（増幅倍率：初期値1.0倍）
 // 【なぜ初期値を1.0倍にするのか】
@@ -23,25 +25,49 @@ let timeDomainBuffer = null;
 // 2倍、5倍、10倍などに増幅できるようにするため。
 let currentGain = 1.0;
 
-// ノイズゲートのしきい値（0.0 〜 1.0）
-// 【なぜ初期値を0.02にするのか】
-// 0.05だと通常の声の立ち上がりがカットされて遅延を感じるため、
-// 敏感に反応しつつ無音時の暗騒音をカットできる0.02（2%）を初期値とする。
-let noiseGateThreshold = 0.02;
+// ノイズゲートのしきい値（UI・内部共通の最適化パーセント: 0 〜 100）
+// 【なぜ生の数値と1:1にせずdB最適化パーセントで管理するのか】
+// マイクの生入力（autoGainControl: false）は実用的な音量が 0.002〜0.3 付近に偏るため、
+// 生の値と1:1にするとスライダー左端に調整域が密集し微調整が極めて難しくなる。
+// 対数（dB）カーブで実用域を 0〜100% へ広げ、画面の緑バーと赤線の位置を一致させることで
+// 「微調整のしやすさ」と「赤線を超えたら反応する直感性」を両立する。
+let noiseGatePercent = 25;
 
-// ゲートが開いた後のリリース保持フレーム数（約10フレーム＝約160ms）
-// 【なぜリリース保持が必要なのか】
-// 音の立ち上がりで瞬時にゲートを開いた後、母音の切れ目などで波形が瞬時に消えて
-// パラパラと点滅するのを防ぎ、自然で滑らかな観察を可能にするため。
-let gateHoldCounter = 0;
-const GATE_HOLD_FRAMES = 10;
+// dBスケーリング範囲（静かな室内の約-54dB 〜 大音量の-6dBを 0%〜100% に割り当て）
+const MIN_GATE_DB = -54;
+const MAX_GATE_DB = -6;
+
+// 一度しきい値を超えた後に音を拾い続けるラッチ時間（10秒 = 10000ms）
+// 【なぜ10秒ラッチ方式にするのか】
+// おんさや楽器の減衰音を観察する際、毎フレーム音量判定を行うと余韻が小さくなった瞬間に
+// 波形が突然消えてしまう。瞬間的な大きい音で一度トリガーを引いた後は、
+// 停止ボタンが押されるか10秒経過するまで減衰音を含めて途切れず観察できるようにするため。
+const GATE_LATCH_DURATION_MS = 10000;
+let gateActiveUntil = 0;
 
 /**
- * 波形解析パイプライン（GainNode → AnalyserNode）を初期化・確保する内部ヘルパー
- * 【なぜこの共通化が必要なのか】
- * マイク入力だけでなく、アプリ内部で生成した基準音（トーンジェネレーター）の直結観察時にも
- * まったく同じゲイン増幅器（GainNode）と解析器（AnalyserNode）を通すことで、
- * どちらの入力ソースでも先生が設定したゲイン倍率（0.5x〜10x）が正確に波形振幅に反映されるようにするため。
+ * 生入力の振幅レベル（0.0〜1.0）を操作しやすい音量メーター%（0〜100）へ変換する
+ * 【なぜ対数（dB）マッピングを用いるのか】
+ * 人間の聴覚は音圧に対して対数的に反応するため、dB基準でマッピングすることで
+ * 雑音〜会話〜楽器の音までがメーター全体にバランスよく分布し、閾値調整がしやすくなる。
+ *
+ * @param {number} level - 生入力の代表振幅レベル
+ * @returns {number} 0〜100 のメーター表示パーセント
+ */
+function levelToMeterPercent(level) {
+  if (!level || level <= 0) return 0;
+  const db = 20 * Math.log10(Math.max(level, 1e-5));
+  const pct = ((db - MIN_GATE_DB) / (MAX_GATE_DB - MIN_GATE_DB)) * 100;
+  return Math.max(0, Math.min(100, pct));
+}
+
+/**
+ * 波形解析パイプライン（GainNode → AnalyserNode ＆ 生入力監視用 rawAnalyserNode）を初期化・確保する内部ヘルパー
+ * 【なぜ2系統のアナライザーを用意するのか】
+ * - 先生がゲインを ×5.0 や ×10.0 に上げても、ノイズゲート（トリガー）の判定は
+ *   ゲイン増幅前の「マイク生の音」で行い、周囲の雑音増幅による誤作動を防ぐため。
+ * - 描画用には GainNode 通過後の信号を使い、基準音ジェネレーターの内部直結観察時にも
+ *   先生が設定したゲイン倍率（0.5x〜10x）が正確に波形振幅へ反映されるようにする。
  */
 function ensureAnalysisPipeline() {
   if (!audioContext) {
@@ -63,8 +89,13 @@ function ensureAnalysisPipeline() {
     analyserNode.fftSize = 2048;
     timeDomainBuffer = new Float32Array(analyserNode.fftSize);
 
-    // ゲインノード → アナライザー に接続（スピーカーには出力しないためハウリングしない）
+    // ゲインノード → 表示用アナライザー に接続（スピーカーには出力しないためハウリングしない）
     gainNode.connect(analyserNode);
+  }
+  if (!rawAnalyserNode) {
+    rawAnalyserNode = audioContext.createAnalyser();
+    rawAnalyserNode.fftSize = 2048;
+    rawTimeDomainBuffer = new Float32Array(rawAnalyserNode.fftSize);
   }
 }
 
@@ -98,9 +129,10 @@ export async function initAudio() {
     // マイクストリームを Web Audio のソースノードに接続
     const sourceNode = audioContext.createMediaStreamSource(microphoneStream);
 
-    // 【なぜGainNode（増幅器）を挟むのか】
-    // 先生が設定したゲイン倍率（0.5x〜10x）で信号を増幅し、
-    // 小さな音やおんさの減衰音でも波形が大きく綺麗に映るようにするため。
+    // 【なぜGainNodeの前段と後段の2系統に接続するのか】
+    // 1. rawAnalyserNode（ゲイン前）: 生の音量をそのまま監視し、ゲイン変更の影響を受けないノイズゲート判定を行うため。
+    // 2. gainNode（増幅器）: 先生が設定したゲイン倍率（0.5x〜10x）で信号を増幅し、小さな音でも画面上に大きく描くため。
+    sourceNode.connect(rawAnalyserNode);
     sourceNode.connect(gainNode);
 
     // コンテキストがサスペンド状態の場合は再開
@@ -150,75 +182,169 @@ export function getGain() {
 }
 
 /**
- * ノイズゲートのしきい値を設定する関数
- * @param {number} threshold - 0.0 〜 1.0 の範囲のしきい値
+ * ノイズゲート（トリガー）のしきい値パーセントを設定する関数
+ * 【なぜ変更時にラッチ状態をリセットするのか】
+ * ユーザーがスライダーを動かして閾値を上げた際、前のラッチ（10秒保持）が残ったままだと
+ * 新しい閾値が即座に効いている手応えが感じられないため、変更時点で一度待機判定をやり直す。
+ *
+ * @param {number} percent - 0 〜 100 のしきい値（0は待機なし・常時入力）
  */
-export function setNoiseGateThreshold(threshold) {
-  noiseGateThreshold = Math.max(0, Math.min(1, threshold));
+export function setNoiseGateThreshold(percent) {
+  noiseGatePercent = Math.max(0, Math.min(100, Number(percent) || 0));
+  gateActiveUntil = 0;
 }
 
 /**
- * 現在のノイズゲートしきい値を取得する関数
- * @returns {number} しきい値
+ * 現在のノイズゲートしきい値（0〜100%）を取得する関数
+ * @returns {number} しきい値（0〜100）
  */
 export function getNoiseGateThreshold() {
-  return noiseGateThreshold;
+  return noiseGatePercent;
 }
 
 /**
- * 音声のリアルタイム解析データを取得する関数
- * 【なぜピーク検出とホールドを組み合わせるのか】
- * - 45ミリ秒全体のRMS平均だけだと、音が鳴り始めた瞬間（最初のアタック）の
- *   値が小さくなり、ゲートが開くまでにタイムラグ（遅延）が発生するため。
- * - ピーク振幅（最大値）を併用することで、音が出た最初の0.001秒で瞬時にゲートを開放する。
- * 
- * @returns {Object} { rawData: Float32Array, rms: number, isAboveGate: boolean, sampleRate: number }
+ * ノイズゲートの10秒保持（ラッチ）を強制リセットして「待機状態」に戻す関数
+ * 【なぜこの関数が必要なのか】
+ * 一時停止（ピタッと停止）から再開した直後や、実験をやり直したいときに
+ * 前の計測の残り時間を引き継がず、次の音が鳴るまでクリーンに待機するため。
  */
-export function getAudioData() {
-  if (!analyserNode || !timeDomainBuffer) {
-    return {
-      rawData: new Float32Array(0),
-      rms: 0,
-      isAboveGate: false,
-      sampleRate: 44100
-    };
+export function resetNoiseGateLatch() {
+  gateActiveUntil = 0;
+}
+
+/**
+ * ゲイン適用前の「生の音」の音量レベルとメーター%を取得する関数
+ * 【なぜ生音（プリゲイン）で測定するのか】
+ * 先生が波形を見やすくするためにゲイン倍率を上げても、周囲の暗騒音まで
+ * しきい値を突破してゲートが開いてしまうのを防ぐため。
+ *
+ * @returns {{ rawRms: number, rawPeak: number, rawLevel: number, meterPercent: number }}
+ */
+export function getRawAudioLevel() {
+  if (!rawAnalyserNode || !rawTimeDomainBuffer) {
+    return { rawRms: 0, rawPeak: 0, rawLevel: 0, meterPercent: 0 };
   }
 
-  // 最新の時間領域波形データを取得 (-1.0 〜 +1.0)
-  analyserNode.getFloatTimeDomainData(timeDomainBuffer);
+  rawAnalyserNode.getFloatTimeDomainData(rawTimeDomainBuffer);
 
-  // 音の強さ（RMS）と瞬間ピーク振幅を同時に計算
   let sumSquares = 0;
   let peak = 0;
-  const len = timeDomainBuffer.length;
+  const len = rawTimeDomainBuffer.length;
 
   for (let i = 0; i < len; i++) {
-    const val = timeDomainBuffer[i];
+    const val = rawTimeDomainBuffer[i];
     const absVal = Math.abs(val);
     if (absVal > peak) peak = absVal;
     sumSquares += val * val;
   }
 
   const rms = Math.sqrt(sumSquares / len);
+  // 持続音（サイン波等）ではRMSを、叩いた瞬間のアタックはピークの45%を併用して取りこぼしを防ぐ
+  const rawLevel = Math.max(rms, peak * 0.45);
+  const meterPercent = levelToMeterPercent(rawLevel);
 
-  // 【即時アタック検出】
-  // RMSがしきい値を超えているか、またはピーク振幅がしきい値×1.5を超えた瞬間に即座に検知
-  const isTriggered = (rms >= noiseGateThreshold) || (peak >= noiseGateThreshold * 1.5);
+  return {
+    rawRms: rms,
+    rawPeak: peak,
+    rawLevel: rawLevel,
+    meterPercent: meterPercent
+  };
+}
 
-  if (isTriggered) {
-    // 音を検出したらホールドタイマーを満杯にリセット
-    gateHoldCounter = GATE_HOLD_FRAMES;
-  } else if (gateHoldCounter > 0) {
-    // 音が止まった直後も指定フレーム数はゲートを開いたまま維持（滑らかな余韻）
-    gateHoldCounter--;
+/**
+ * 生入力の音が現在設定されているノイズゲートしきい値を超えているか判定する関数
+ * （「まるごと波形きろく」タブの自動録音スタート判定でも共通利用）
+ *
+ * @returns {boolean} しきい値超過中（またはしきい値0%・内部直結中）なら true
+ */
+export function isRawAudioAboveThreshold() {
+  if (noiseGatePercent <= 0) return true;
+  if (isLoopbackEnabled && !!toneOscillator) return true;
+  const { meterPercent } = getRawAudioLevel();
+  return meterPercent >= noiseGatePercent;
+}
+
+/**
+ * 音声のリアルタイム解析データを取得する関数
+ * 【なぜ「10秒ラッチ型」のトリガー判定にするのか】
+ * 瞬間的に大きい音を出してしきい値を超えた後、おんさの減衰音などが小さくなっても
+ * 10秒経過するかユーザーが停止ボタンを押すまで途切れず波形を観察し続けられるようにするため。
+ *
+ * @param {Object} [options]
+ * @param {boolean} [options.freezeLatch=false] - 一時停止中は新規ラッチ発火を抑止する
+ * @returns {Object} { rawData: Float32Array, rms: number, meterPercent: number, isAboveGate: boolean, isLatched: boolean, gateRemainingMs: number, isBypassed: boolean, sampleRate: number }
+ */
+export function getAudioData(options = {}) {
+  const freezeLatch = !!options.freezeLatch;
+
+  if (!analyserNode || !timeDomainBuffer) {
+    return {
+      rawData: new Float32Array(0),
+      rms: 0,
+      meterPercent: 0,
+      isAboveGate: false,
+      isLatched: false,
+      gateRemainingMs: 0,
+      isBypassed: noiseGatePercent <= 0,
+      sampleRate: 44100
+    };
   }
 
-  const isAboveGate = (gateHoldCounter > 0) || (noiseGateThreshold <= 0.005);
+  // 表示用の時間領域波形データ（GainNode通過後）を取得 (-1.0 〜 +1.0)
+  analyserNode.getFloatTimeDomainData(timeDomainBuffer);
+
+  let sumSquares = 0;
+  const len = timeDomainBuffer.length;
+  for (let i = 0; i < len; i++) {
+    const val = timeDomainBuffer[i];
+    sumSquares += val * val;
+  }
+  const rms = Math.sqrt(sumSquares / len);
+
+  // ゲート判定＆メーター表示には「ゲイン適用前の生の音」を使用
+  const rawStats = getRawAudioLevel();
+  const isLoopbackActive = isLoopbackEnabled && !!toneOscillator;
+  const isBypassed = (noiseGatePercent <= 0) || isLoopbackActive;
+
+  // 内部直結モード時はループバック信号のRMSからメーター表示を補完して視認性を保つ
+  const displayMeterPercent = isLoopbackActive
+    ? Math.max(rawStats.meterPercent, levelToMeterPercent(rms))
+    : rawStats.meterPercent;
+
+  const now = performance.now();
+  let isAboveGate = false;
+  let isLatched = false;
+  let gateRemainingMs = 0;
+
+  if (isBypassed) {
+    // 閾値0%または基準音ジェネレーター内部直結時は待機せず常に通す
+    isAboveGate = true;
+    gateActiveUntil = 0;
+  } else {
+    // 一時停止中でなく、かつ現在待機中のときに生の音が閾値を超えたら10秒間ラッチ開放
+    if (!freezeLatch && gateActiveUntil <= now && rawStats.meterPercent >= noiseGatePercent) {
+      gateActiveUntil = now + GATE_LATCH_DURATION_MS;
+    }
+
+    if (gateActiveUntil > now) {
+      isAboveGate = true;
+      isLatched = true;
+      gateRemainingMs = gateActiveUntil - now;
+    } else {
+      // 10秒経過後は自動で待機状態へ戻す
+      gateActiveUntil = 0;
+      isAboveGate = false;
+    }
+  }
 
   return {
     rawData: timeDomainBuffer,
     rms: rms,
+    meterPercent: Math.round(displayMeterPercent),
     isAboveGate: isAboveGate,
+    isLatched: isLatched,
+    gateRemainingMs: gateRemainingMs,
+    isBypassed: isBypassed,
     sampleRate: audioContext.sampleRate
   };
 }
@@ -428,7 +554,80 @@ export function stopAudio() {
   if (audioContext) {
     audioContext.close();
   }
-  audioContext = null;
-  analyserNode = null;
-  gainNode = null;
 }
+
+// --- 連続波形レコーダー連携用フック ---
+let recordDataCallback = null;
+let recordingProcessorNode = null;
+let recordingSilentGain = null;
+
+/**
+ * 連続波形記録用の音声データストリーム供給を開始する関数
+ * 【なぜScriptProcessorNodeを採用するのか】
+ * - Safari/iPadOS、Chromebook、Windowsなどあらゆる教育端末において、
+ *   外部Workletスクリプト読み込みに伴うセキュリティ制約（file://やCORS制限）を回避し、
+ *   100%確実に高精度なPCMサンプルを連続取得できるようにするため。
+ * 
+ * @param {Function} onData - (channelData: Float32Array, sampleRate: number) => void
+ */
+export function startRecordingStream(onData) {
+  ensureAnalysisPipeline();
+  recordDataCallback = onData;
+
+  if (!recordingProcessorNode && audioContext && gainNode) {
+    try {
+      // 4096サンプルのバッファ（約90ms間隔で安定コールバック）
+      recordingProcessorNode = audioContext.createScriptProcessor(4096, 1, 1);
+      
+      recordingProcessorNode.onaudioprocess = (e) => {
+        if (recordDataCallback) {
+          const input = e.inputBuffer.getChannelData(0);
+          recordDataCallback(input, audioContext.sampleRate);
+        }
+      };
+
+      // ゲイン調整後の信号を取り込む
+      gainNode.connect(recordingProcessorNode);
+
+      // 【ブラウザGC対策】
+      // Web Audio APIの仕様上、ProcessorNodeがdestination（出力）の系統に
+      // 接続されていないとブラウザによって自動破棄されるため、
+      // ゲイン0（完全無音）のノードを経由して安全にdestinationに接続する。
+      recordingSilentGain = audioContext.createGain();
+      recordingSilentGain.gain.value = 0;
+      recordingProcessorNode.connect(recordingSilentGain);
+      recordingSilentGain.connect(audioContext.destination);
+    } catch (err) {
+      console.error("[Audio] 録音プロセッサの初期化に失敗:", err);
+    }
+  }
+}
+
+/**
+ * 連続波形記録用の音声データストリーム供給を停止する関数
+ */
+export function stopRecordingStream() {
+  recordDataCallback = null;
+  if (recordingProcessorNode) {
+    try {
+      if (gainNode) gainNode.disconnect(recordingProcessorNode);
+      recordingProcessorNode.disconnect();
+    } catch (e) {}
+    recordingProcessorNode = null;
+  }
+  if (recordingSilentGain) {
+    try {
+      recordingSilentGain.disconnect();
+    } catch (e) {}
+    recordingSilentGain = null;
+  }
+}
+
+/**
+ * 現在のAudioContextインスタンスを取得する関数（再生用）
+ * @returns {AudioContext|null}
+ */
+export function getAudioContextInstance() {
+  return audioContext;
+}
+
