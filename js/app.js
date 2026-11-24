@@ -191,6 +191,10 @@ const recNoiseGateSlider = document.getElementById("recNoiseGateSlider");
 const recGateLine = document.getElementById("recGateLine");
 const recGateValText = document.getElementById("recGateValText");
 const recMeterFill = document.getElementById("recMeterFill");
+const loupeTimeText = document.getElementById("loupeTimeText");
+const btnLoupeLeft = document.getElementById("btnLoupeLeft");
+const btnLoupeRight = document.getElementById("btnLoupeRight");
+const btnLoupeWindows = document.querySelectorAll(".btn-loupe-win");
 
 // --- 【タブ2】チューナー関連の要素 ---
 const tunerSolfege = document.getElementById("tunerSolfege");
@@ -1588,7 +1592,8 @@ function exportRecorderImageWithMetadata(studentName, experimentCond) {
   const durA = waveformRecorder.hasData("A") ? `${waveformRecorder.getDuration("A").toFixed(2)}s` : "未記録";
   const durB = waveformRecorder.hasData("B") ? `${waveformRecorder.getDuration("B").toFixed(2)}s` : "未記録";
   const modeName = waveformRecorder.displayMode === "split" ? "上下並列" : "重ね合わせ";
-  const recordInfo = `[まるごと波形: ${modeName}] [音A: ${durA}] [音B: ${durB}]`;
+  const loupeInfo = `[拡大: ${waveformRecorder.getInspectTime().toFixed(2)}s / ${waveformRecorder.getLoupeWindowMs()}ms幅]`;
+  const recordInfo = `[まるごと波形: ${modeName}] [音A: ${durA}] [音B: ${durB}] ${loupeInfo}`;
   const infoWidth = exportCtx.measureText(recordInfo).width;
   exportCtx.fillText(recordInfo, exportCanvas.width - infoWidth - 20, line2Y);
 
@@ -1777,6 +1782,11 @@ function updateRecordingUI() {
   osdRecA.textContent = hasA ? `音A: ${waveformRecorder.getDuration("A").toFixed(2)}s` : "音A: 未記録";
   osdRecB.textContent = hasB ? `音B: ${waveformRecorder.getDuration("B").toFixed(2)}s` : "音B: 未記録";
   osdRecMode.textContent = waveformRecorder.displayMode === "split" ? "モード: 上下に並べる" : "モード: 重ね合わせ";
+
+  // ルーペ検査時刻バッジの同期
+  if (loupeTimeText) {
+    loupeTimeText.textContent = (hasA || hasB) ? `${waveformRecorder.getInspectTime().toFixed(2)}s` : "---";
+  }
 }
 
 /**
@@ -1948,6 +1958,117 @@ btnRecModeOverlay.addEventListener("click", () => {
   btnRecModeSplit.classList.remove("active");
   waveformRecorder.setDisplayMode("overlay");
   updateRecordingUI();
+});
+
+// --- 波形拡大ルーペ操作（Canvas直接タップ／ドラッグ ＆ ボタン微調整） ---
+// 【なぜ上段と下段でドラッグ感度を変えるのか】
+// 上段（全体波形）ではタップした時刻へ直感的に大移動し、
+// 下段（拡大ルーペ）では左右ドラッグでミリ秒単位の細かい波形スライドができるようにするため。
+let isRecDragging = false;
+let recDragArea = "overview"; // "overview" | "loupe"
+let recDragStartX = 0;
+let recDragStartTime = 0;
+
+function updateLoupeTimeBadge() {
+  if (!loupeTimeText) return;
+  const hasAny = waveformRecorder.hasData("A") || waveformRecorder.hasData("B");
+  loupeTimeText.textContent = hasAny ? `${waveformRecorder.getInspectTime().toFixed(2)}s` : "---";
+}
+
+function handleRecorderPointerDown(clientX, clientY) {
+  const maxDur = waveformRecorder.getMaxDuration();
+  if (maxDur <= 0 || !recorderCanvas) return;
+
+  const rect = recorderCanvas.getBoundingClientRect();
+  const relX = Math.max(0, Math.min(rect.width, clientX - rect.left));
+  const relY = clientY - rect.top;
+  const overviewH = waveformRecorder.getOverviewHeight();
+
+  isRecDragging = true;
+  recDragStartX = clientX;
+  recDragStartTime = waveformRecorder.getInspectTime();
+
+  if (relY <= overviewH) {
+    recDragArea = "overview";
+    const targetSec = (relX / rect.width) * maxDur;
+    waveformRecorder.setInspectTime(targetSec);
+    updateLoupeTimeBadge();
+  } else {
+    recDragArea = "loupe";
+  }
+}
+
+function handleRecorderPointerMove(clientX) {
+  if (!isRecDragging || !recorderCanvas) return;
+  const maxDur = waveformRecorder.getMaxDuration();
+  if (maxDur <= 0) return;
+
+  const rect = recorderCanvas.getBoundingClientRect();
+  if (recDragArea === "overview") {
+    const relX = Math.max(0, Math.min(rect.width, clientX - rect.left));
+    const targetSec = (relX / rect.width) * maxDur;
+    waveformRecorder.setInspectTime(targetSec);
+  } else {
+    // 下段ルーペエリアでのドラッグは拡大窓の幅に応じて繊細にスライド（逆方向＝波を掴んで動かす感覚）
+    const deltaX = clientX - recDragStartX;
+    const windowSec = waveformRecorder.getLoupeWindowMs() / 1000;
+    const deltaSec = -(deltaX / rect.width) * windowSec;
+    waveformRecorder.setInspectTime(recDragStartTime + deltaSec);
+  }
+  updateLoupeTimeBadge();
+}
+
+function handleRecorderPointerUp() {
+  isRecDragging = false;
+}
+
+if (recorderCanvas) {
+  recorderCanvas.addEventListener("mousedown", (e) => {
+    handleRecorderPointerDown(e.clientX, e.clientY);
+  });
+  window.addEventListener("mousemove", (e) => {
+    handleRecorderPointerMove(e.clientX);
+  });
+  window.addEventListener("mouseup", handleRecorderPointerUp);
+
+  recorderCanvas.addEventListener("touchstart", (e) => {
+    if (e.touches.length > 0) {
+      handleRecorderPointerDown(e.touches[0].clientX, e.touches[0].clientY);
+    }
+  }, { passive: true });
+  window.addEventListener("touchmove", (e) => {
+    if (isRecDragging && e.touches.length > 0) {
+      handleRecorderPointerMove(e.touches[0].clientX);
+    }
+  }, { passive: true });
+  window.addEventListener("touchend", handleRecorderPointerUp);
+}
+
+// ルーペ位置の微調整ボタン（現在の拡大窓の半分ずつステップ移動）
+if (btnLoupeLeft) {
+  btnLoupeLeft.addEventListener("click", () => {
+    const stepSec = Math.max(0.01, (waveformRecorder.getLoupeWindowMs() / 1000) * 0.5);
+    waveformRecorder.nudgeInspectTime(-stepSec);
+    updateLoupeTimeBadge();
+  });
+}
+
+if (btnLoupeRight) {
+  btnLoupeRight.addEventListener("click", () => {
+    const stepSec = Math.max(0.01, (waveformRecorder.getLoupeWindowMs() / 1000) * 0.5);
+    waveformRecorder.nudgeInspectTime(stepSec);
+    updateLoupeTimeBadge();
+  });
+}
+
+// ルーペ拡大幅の切り替えボタン（10ms / 20ms / 50ms）
+btnLoupeWindows.forEach(btn => {
+  btn.addEventListener("click", () => {
+    btnLoupeWindows.forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    const winMs = parseInt(btn.dataset.window, 10);
+    waveformRecorder.setLoupeWindowMs(winMs);
+  });
 });
 
 // まるごと波形きろくの画像保存ボタン

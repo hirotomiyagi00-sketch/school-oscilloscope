@@ -1933,9 +1933,9 @@ body {
 .recorder-screen-wrapper {
   position: relative;
   width: 100%;
-  height: 52vh;
-  min-height: 340px;
-  max-height: 560px;
+  height: 58vh;
+  min-height: 400px;
+  max-height: 640px;
   background-color: var(--bg-canvas);
   border: 2px solid var(--border-color);
   border-radius: 16px;
@@ -1948,6 +1948,76 @@ body {
   width: 100%;
   height: 100%;
   display: block;
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+/* 波形拡大ルーペ操作コントロール */
+.loupe-control-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background-color: var(--bg-canvas);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 8px 12px;
+}
+
+.loupe-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.loupe-time-badge {
+  font-size: 0.78rem;
+  font-weight: 800;
+  font-family: monospace;
+  color: #f59e0b;
+  background-color: rgba(245, 158, 11, 0.14);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  padding: 1px 7px;
+  border-radius: 8px;
+}
+
+.loupe-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.loupe-step-buttons {
+  display: flex;
+  gap: 4px;
+}
+
+.loupe-window-buttons {
+  display: flex;
+  gap: 4px;
+}
+
+.btn-loupe-win {
+  background-color: var(--bg-panel);
+  border: 1px solid var(--border-color);
+  color: var(--text-main);
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-loupe-win:hover {
+  border-color: #f59e0b;
+  color: #f59e0b;
+}
+
+.btn-loupe-win.active {
+  background-color: #f59e0b;
+  border-color: #f59e0b;
+  color: #0f172a;
 }
 
 .recorder-panel {

@@ -366,6 +366,25 @@
           </div>
         </div>
 
+        <!-- 波形拡大ルーペの位置微調整 ＆ 拡大幅切替コントロール -->
+        <div class="loupe-control-group">
+          <div class="loupe-header">
+            <span class="control-label">🔍 拡大ルーペ位置・幅</span>
+            <span id="loupeTimeText" class="loupe-time-badge">---</span>
+          </div>
+          <div class="loupe-actions">
+            <div class="loupe-step-buttons">
+              <button id="btnLoupeLeft" class="btn-phase-step" title="ルーペ位置を少し左（前）へ移動">◀</button>
+              <button id="btnLoupeRight" class="btn-phase-step" title="ルーペ位置を少し右（後）へ移動">▶</button>
+            </div>
+            <div class="loupe-window-buttons">
+              <button class="btn-loupe-win" data-window="10" title="10ms幅（高い音・細かい波形向け）">10ms</button>
+              <button class="btn-loupe-win active" data-window="20" title="20ms幅（標準・おんさ向け）">20ms</button>
+              <button class="btn-loupe-win" data-window="50" title="50ms幅（低い音・声向け）">50ms</button>
+            </div>
+          </div>
+        </div>
+
         <!-- まるごと波形きろく用 閾値調整スライダー（タブ1と連動） -->
         <div class="student-gate-control rec-gate-control">
           <div class="gate-header">
