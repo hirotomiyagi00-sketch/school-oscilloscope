@@ -82,8 +82,11 @@ const btnCloseTeacherPanel = document.getElementById("btnCloseTeacherPanel");
 const btnLockTeacherMode = document.getElementById("btnLockTeacherMode");
 const btnApplyTeacherSettings = document.getElementById("btnApplyTeacherSettings");
 
-// 生徒配布用URL生成・コピー要素
+// 生徒配布用URL生成・コピー・QR投影要素
 const btnCopyCurrentConfigLink = document.getElementById("btnCopyCurrentConfigLink");
+const btnShowShareQRModal = document.getElementById("btnShowShareQRModal");
+const shareStartTabSelect = document.getElementById("shareStartTabSelect");
+const chkShareStudentLock = document.getElementById("chkShareStudentLock");
 const shareUrlPreview = document.getElementById("shareUrlPreview");
 const toastNotification = document.getElementById("toastNotification");
 const btnPresetLinkCopies = document.querySelectorAll(".btn-preset-link-copy");
@@ -113,17 +116,10 @@ const alertJoinRoom = document.getElementById("alertJoinRoom");
 const btnCancelJoinRoom = document.getElementById("btnCancelJoinRoom");
 const btnSubmitJoinRoom = document.getElementById("btnSubmitJoinRoom");
 
-// 先生側ルーム配信＆QR関連
-const btnStartRoom = document.getElementById("btnStartRoom");
-const roomInitialArea = document.getElementById("roomInitialArea");
-const roomActiveArea = document.getElementById("roomActiveArea");
-const teacherRoomCodeDisplay = document.getElementById("teacherRoomCodeDisplay");
-const btnShowQRModal = document.getElementById("btnShowQRModal");
-const btnCloseRoom = document.getElementById("btnCloseRoom");
-
+// プロジェクター投影用 大画面QRコードモーダル要素
 const qrModal = document.getElementById("qrModal");
 const qrCanvas = document.getElementById("qrCanvas");
-const qrRoomCodeText = document.getElementById("qrRoomCodeText");
+const qrConfigSummary = document.getElementById("qrConfigSummary");
 const btnCloseQRModal = document.getElementById("btnCloseQRModal");
 
 // パスコード変更
@@ -194,7 +190,13 @@ const recMeterFill = document.getElementById("recMeterFill");
 const loupeTimeText = document.getElementById("loupeTimeText");
 const btnLoupeLeft = document.getElementById("btnLoupeLeft");
 const btnLoupeRight = document.getElementById("btnLoupeRight");
-const btnLoupeWindows = document.querySelectorAll(".btn-loupe-win");
+const btnLoupeZooms = document.querySelectorAll(".btn-loupe-zoom");
+const recOffsetGroup = document.getElementById("recOffsetGroup");
+const recOffsetValText = document.getElementById("recOffsetValText");
+const recOffsetSlider = document.getElementById("recOffsetSlider");
+const btnRecOffsetLeft = document.getElementById("btnRecOffsetLeft");
+const btnRecOffsetRight = document.getElementById("btnRecOffsetRight");
+const btnRecOffsetReset = document.getElementById("btnRecOffsetReset");
 
 // --- 【タブ2】チューナー関連の要素 ---
 const tunerSolfege = document.getElementById("tunerSolfege");
@@ -464,6 +466,17 @@ function generateStudentUrl(customParams = {}) {
   const url = new URL(window.location.href.split("?")[0]);
   const curThemeId = document.documentElement.getAttribute("data-theme") || "medical";
 
+  // 配布時に最初に開くタブの決定（autoの場合は現在開いているタブ）
+  const selectedTab = shareStartTabSelect ? shareStartTabSelect.value : "auto";
+  const startTab = customParams.tab !== undefined
+    ? customParams.tab
+    : (selectedTab === "auto" ? currentTab : selectedTab);
+
+  // 生徒画面で先生用設定をパスコード保護するかどうか（デフォルトON）
+  const lockStudent = customParams.mode !== undefined
+    ? customParams.mode === "student"
+    : (!chkShareStudentLock || chkShareStudentLock.checked);
+
   const config = {
     gain: customParams.gain !== undefined ? customParams.gain : getGain(),
     w: customParams.w !== undefined ? customParams.w : renderer.getHorizontalDivs(),
@@ -472,6 +485,13 @@ function generateStudentUrl(customParams = {}) {
     gate: customParams.gate !== undefined ? customParams.gate : Math.round(getNoiseGateThreshold()),
     th: customParams.th !== undefined ? customParams.th : curThemeId
   };
+
+  if (startTab && startTab !== "wave") {
+    config.tab = startTab;
+  }
+  if (lockStudent) {
+    config.mode = "student";
+  }
 
   // 各設定値をURLクエリパラメータにセット
   Object.entries(config).forEach(([key, val]) => {
@@ -576,6 +596,8 @@ function applyGain(val, isSyncEvent = false) {
 function applyHorizontalDivs(divs, isSyncEvent = false) {
   const val = Math.max(10, Math.min(100, parseInt(divs, 10) || 50));
   renderer.setHorizontalDivs(val);
+  // まるごと波形きろくの拡大ルーペにも同じ横マス数を同期反映
+  waveformRecorder.setOscilloscopeScale({ horizontalDivs: val });
 
   // 画面OSD表示の更新
   if (osdWidth) {
@@ -630,6 +652,8 @@ function syncSelectByNumericValue(select, numVal) {
  */
 function applyTimeDiv(val, isSyncEvent = false) {
   renderer.setTimeDiv(val);
+  // まるごと波形きろくの拡大ルーペにも同じ TIME/DIV を同期反映
+  waveformRecorder.setOscilloscopeScale({ timeDivMs: val });
   osdTimeDiv.textContent = `TIME: ${val.toFixed(1)} ms/div`;
   syncSelectByNumericValue(timeDivSelect, val);
   syncSelectByNumericValue(teacherTimeDivSelect, val);
@@ -646,6 +670,8 @@ function applyTimeDiv(val, isSyncEvent = false) {
  */
 function applyVoltsDiv(val, isSyncEvent = false) {
   renderer.setVoltsDiv(val);
+  // まるごと波形きろくの拡大ルーペにも同じ VOLTS/DIV を同期反映
+  waveformRecorder.setOscilloscopeScale({ voltsDiv: val });
   osdVoltsDiv.textContent = `VOLT: ${val.toFixed(1)} V/div`;
   syncSelectByNumericValue(voltsDivSelect, val);
   syncSelectByNumericValue(teacherVoltsDivSelect, val);
@@ -909,57 +935,62 @@ btnSaveNewPasscode.addEventListener("click", () => {
   }
 });
 
-// --- リアルタイム授業ルーム管理（先生側） ---
-btnStartRoom.addEventListener("click", () => {
-  const code = startTeacherRoom();
-  teacherRoomCodeDisplay.textContent = `#${code}`;
-  roomInitialArea.style.display = "none";
-  roomActiveArea.style.display = "block";
+// --- 設定埋め込みURLのQRコード投影 ＆ 配布オプション連動 ---
+if (shareStartTabSelect) {
+  shareStartTabSelect.addEventListener("change", () => {
+    updateShareUrlPreview();
+  });
+}
 
-  // 開始直後の設定を一括配信
-  syncCurrentConfigToStudents();
-
-  // 自動的にプロジェクター用QRモーダルを表示
-  showQRCodeModal(code);
-});
-
-btnShowQRModal.addEventListener("click", () => {
-  const code = getCurrentRoomCode();
-  if (code) {
-    showQRCodeModal(code);
-  }
-});
-
-btnCloseRoom.addEventListener("click", () => {
-  leaveRoom();
-  roomInitialArea.style.display = "block";
-  roomActiveArea.style.display = "none";
-  teacherRoomCodeDisplay.textContent = "#----";
-});
+if (chkShareStudentLock) {
+  chkShareStudentLock.addEventListener("change", () => {
+    updateShareUrlPreview();
+  });
+}
 
 /**
- * プロジェクター用大画面QRコードモーダルを表示する関数
- * @param {string} code - ルームコード
+ * 現在の設定を埋め込んだ生徒用URLを大画面QRコードで表示する関数
+ * 【なぜ授業ルームではなく設定URLそのものをQRコード化するのか】
+ * 外部サーバー通信を一切必要とせず、学校のWi-Fi制限やフィルタリング下でも
+ * 生徒がカメラで読み取るだけで100%確実に先生の設定通りに起動できるため。
  */
-function showQRCodeModal(code) {
-  qrRoomCodeText.textContent = `#${code}`;
-  // 参加用URLの生成（現在のURLに ?room=XXXX を付与）
-  const joinUrl = new URL(window.location.href);
-  joinUrl.searchParams.set("room", code);
+function showShareQRCodeModal() {
+  const shareUrl = generateStudentUrl();
+  const tabLabels = {
+    wave: "波形観察・比較",
+    record: "まるごと波形きろく",
+    tuner: "音の高さしらべ",
+    generator: "基準音を鳴らす"
+  };
+  const selectedTab = shareStartTabSelect ? shareStartTabSelect.value : "auto";
+  const actualTab = selectedTab === "auto" ? currentTab : selectedTab;
+  const lockText = (!chkShareStudentLock || chkShareStudentLock.checked) ? "先生設定ロックON" : "ロックOFF";
+
+  if (qrConfigSummary) {
+    qrConfigSummary.textContent = `画面: ${tabLabels[actualTab] || actualTab} / ゲイン ×${getGain().toFixed(1)} / 横 ${renderer.getHorizontalDivs()}マス / TIME ${renderer.timeDivMs.toFixed(1)}ms / VOLT ${renderer.voltsDiv.toFixed(1)}V / しきい値 ${Math.round(getNoiseGateThreshold())}% / ${lockText}`;
+  }
 
   if (window.drawQRCodeToCanvas && qrCanvas) {
     try {
-      window.drawQRCodeToCanvas(qrCanvas, joinUrl.toString(), 220);
+      window.drawQRCodeToCanvas(qrCanvas, shareUrl, 240);
     } catch (e) {
       console.warn("[QR] QRコード描画に失敗しました:", e);
+      showToast("⚠️ QRコードの生成に失敗しました（URLコピーをご利用ください）");
+      return;
     }
   }
-  qrModal.classList.add("active");
+  if (qrModal) qrModal.classList.add("active");
 }
 
-btnCloseQRModal.addEventListener("click", () => {
-  qrModal.classList.remove("active");
-});
+if (btnShowShareQRModal) {
+  btnShowShareQRModal.addEventListener("click", showShareQRCodeModal);
+}
+
+if (btnCloseQRModal) {
+  btnCloseQRModal.addEventListener("click", () => {
+    if (qrModal) qrModal.classList.remove("active");
+  });
+}
 
 // --- 生徒側ルーム参加処理 ---
 if (btnOpenJoinRoom) {
@@ -1116,6 +1147,23 @@ function applyUrlParams() {
     }
   }
 
+  // 7. 生徒モード保護 (mode=student)
+  // 【なぜ配布リンク時に初期ロック状態にするのか】
+  // 生徒が誤って先生用コントロールパネルを開いて目盛りやゲイン設定を壊すのを防ぎつつ、
+  // 先生が机間指導で必要になったときだけパスコード（初期値0000）で開けるようにするため。
+  if (params.get("mode") === "student") {
+    isTeacherModeUnlocked = false;
+    if (teacherModeBadge) teacherModeBadge.style.display = "none";
+  }
+
+  // 8. 初期表示タブ指定 (tab=wave|record|tuner|generator)
+  if (params.has("tab")) {
+    const targetTab = params.get("tab");
+    if (["wave", "record", "tuner", "generator"].includes(targetTab)) {
+      switchTab(targetTab);
+    }
+  }
+
   // 生徒へのフィードバック（先生の指定設定で起動したことをわかりやすく通知）
   if (appliedItems.length > 0) {
     setTimeout(() => {
@@ -1124,7 +1172,12 @@ function applyUrlParams() {
   }
 }
 
-// 起動時のURLパラメータ適用とプレビューURL初期化
+// 起動時のURLパラメータ適用とルーペ・プレビューURL初期化
+waveformRecorder.setOscilloscopeScale({
+  timeDivMs: renderer.timeDivMs,
+  voltsDiv: renderer.voltsDiv,
+  horizontalDivs: renderer.getHorizontalDivs()
+});
 applyUrlParams();
 updateGateStatusUI(null);
 updateShareUrlPreview();
@@ -1592,8 +1645,11 @@ function exportRecorderImageWithMetadata(studentName, experimentCond) {
   const durA = waveformRecorder.hasData("A") ? `${waveformRecorder.getDuration("A").toFixed(2)}s` : "未記録";
   const durB = waveformRecorder.hasData("B") ? `${waveformRecorder.getDuration("B").toFixed(2)}s` : "未記録";
   const modeName = waveformRecorder.displayMode === "split" ? "上下並列" : "重ね合わせ";
-  const loupeInfo = `[拡大: ${waveformRecorder.getInspectTime().toFixed(2)}s / ${waveformRecorder.getLoupeWindowMs()}ms幅]`;
-  const recordInfo = `[まるごと波形: ${modeName}] [音A: ${durA}] [音B: ${durB}] ${loupeInfo}`;
+  const offsetSec = waveformRecorder.getSlotBOffsetSec();
+  const offsetSign = offsetSec > 0 ? "+" : "";
+  const offsetInfo = Math.abs(offsetSec) >= 0.005 ? ` [音B位置: ${offsetSign}${offsetSec.toFixed(2)}s]` : "";
+  const loupeInfo = `[拡大: ${waveformRecorder.getInspectTime().toFixed(2)}s / 幅${waveformRecorder.getLoupeWindowMs().toFixed(1)}ms]`;
+  const recordInfo = `[まるごと波形: ${modeName}] [音A: ${durA}] [音B: ${durB}]${offsetInfo} ${loupeInfo}`;
   const infoWidth = exportCtx.measureText(recordInfo).width;
   exportCtx.fillText(recordInfo, exportCanvas.width - infoWidth - 20, line2Y);
 
@@ -1682,6 +1738,9 @@ function switchTab(targetTab) {
     waveformRecorder.handleResize();
     waveformRecorder.draw();
   }
+
+  // 配布リンクプレビュー（「いま開いているタブ」選択時）を最新タブに同期
+  updateShareUrlPreview();
 }
 
 tabBtnWave.addEventListener("click", () => switchTab("wave"));
@@ -1787,6 +1846,9 @@ function updateRecordingUI() {
   if (loupeTimeText) {
     loupeTimeText.textContent = (hasA || hasB) ? `${waveformRecorder.getInspectTime().toFixed(2)}s` : "---";
   }
+
+  // 音B横位置ずらしコントロールの有効表示・数値同期
+  syncRecOffsetUI();
 }
 
 /**
@@ -2061,15 +2123,90 @@ if (btnLoupeRight) {
   });
 }
 
-// ルーペ拡大幅の切り替えボタン（10ms / 20ms / 50ms）
-btnLoupeWindows.forEach(btn => {
+// ルーペ拡大幅の相対倍率切り替えボタン（×1=タブ1標準 / ×2 / ×5）
+btnLoupeZooms.forEach(btn => {
   btn.addEventListener("click", () => {
-    btnLoupeWindows.forEach(b => b.classList.remove("active"));
+    btnLoupeZooms.forEach(b => b.classList.remove("active"));
     btn.classList.add("active");
-    const winMs = parseInt(btn.dataset.window, 10);
-    waveformRecorder.setLoupeWindowMs(winMs);
+    const mult = parseInt(btn.dataset.mult, 10) || 1;
+    waveformRecorder.setLoupeZoomMult(mult);
   });
 });
+
+// --- 🔴 音Bの横位置ずらし（全体波形＆ルーペ連動）イベント制御 ---
+
+/**
+ * 音B横位置ずらしスライダーの最大レンジ（秒）を現在の録音時間から算出する
+ * @returns {number} 片側最大ずらし秒数
+ */
+function getRecOffsetMaxRangeSec() {
+  const maxDur = waveformRecorder.getMaxDuration();
+  return Math.max(1.5, maxDur * 0.5);
+}
+
+/**
+ * 現在の waveformRecorder.slotBOffsetSec をUI（数値・スライダー・有効状態）へ同期する関数
+ */
+function syncRecOffsetUI() {
+  const hasB = waveformRecorder.hasData("B");
+  if (recOffsetGroup) {
+    recOffsetGroup.classList.toggle("disabled-hint", !hasB);
+  }
+  const offsetSec = waveformRecorder.getSlotBOffsetSec();
+  if (recOffsetValText) {
+    const sign = offsetSec > 0 ? "+" : "";
+    recOffsetValText.textContent = `${sign}${offsetSec.toFixed(2)}s`;
+  }
+  if (recOffsetSlider) {
+    const maxRange = getRecOffsetMaxRangeSec();
+    const sliderVal = Math.max(-100, Math.min(100, Math.round((offsetSec / maxRange) * 100)));
+    recOffsetSlider.value = sliderVal;
+  }
+}
+
+if (recOffsetSlider) {
+  recOffsetSlider.addEventListener("input", (e) => {
+    if (!waveformRecorder.hasData("B")) {
+      showToast("まず「音B」を記録すると左右にずらせます");
+      recOffsetSlider.value = 0;
+      return;
+    }
+    const sliderVal = parseFloat(e.target.value) || 0;
+    const maxRange = getRecOffsetMaxRangeSec();
+    const targetSec = (sliderVal / 100) * maxRange;
+    waveformRecorder.setSlotBOffsetSec(targetSec);
+    syncRecOffsetUI();
+  });
+}
+
+if (btnRecOffsetLeft) {
+  btnRecOffsetLeft.addEventListener("click", () => {
+    if (!waveformRecorder.hasData("B")) {
+      showToast("まず「音B」を記録すると左右にずらせます");
+      return;
+    }
+    waveformRecorder.nudgeSlotBOffsetSec(-0.02);
+    syncRecOffsetUI();
+  });
+}
+
+if (btnRecOffsetRight) {
+  btnRecOffsetRight.addEventListener("click", () => {
+    if (!waveformRecorder.hasData("B")) {
+      showToast("まず「音B」を記録すると左右にずらせます");
+      return;
+    }
+    waveformRecorder.nudgeSlotBOffsetSec(0.02);
+    syncRecOffsetUI();
+  });
+}
+
+if (btnRecOffsetReset) {
+  btnRecOffsetReset.addEventListener("click", () => {
+    waveformRecorder.setSlotBOffsetSec(0);
+    syncRecOffsetUI();
+  });
+}
 
 // まるごと波形きろくの画像保存ボタン
 btnSaveRecImage.addEventListener("click", () => {

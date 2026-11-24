@@ -315,94 +315,117 @@
         </div>
       </div>
 
-      <!-- まるごと波形きろく 操作パネル -->
+      <!-- まるごと波形きろく 操作パネル（中1でも迷わない手順順3段レイアウト） -->
       <div class="recorder-panel">
-        <!-- 音Aスロット -->
-        <div class="slot-card slot-a" id="recSlotACard">
-          <div class="slot-header">
-            <span class="slot-badge badge-a">🔵 音A（基準）</span>
-            <span class="slot-status" id="recStatusA">未記録</span>
-          </div>
-          <div class="slot-actions">
-            <button id="btnRecordSlotA" class="btn-slot btn-slot-a" title="ボタンを押して音を鳴らし、もう一度押すと記録が完了します（最大15秒）">
-              <span class="rec-icon" id="recIconA">🔴</span>
-              <span id="btnRecordSlotAText">音Aのきろく開始</span>
-            </button>
-            <button id="btnPlaySlotA" class="btn-slot btn-slot-play" title="記録した音Aを聴く" style="display: none;">
-              ▶ 聴く
-            </button>
-            <button id="btnClearRecSlotA" class="btn-slot-clear" title="音Aを消去" style="display: none;">
-              ✕
-            </button>
-          </div>
-        </div>
-
-        <!-- 音Bスロット -->
-        <div class="slot-card slot-b" id="recSlotBCard">
-          <div class="slot-header">
-            <span class="slot-badge badge-b">🔴 音B（比較）</span>
-            <span class="slot-status" id="recStatusB">未記録</span>
-          </div>
-          <div class="slot-actions">
-            <button id="btnRecordSlotB" class="btn-slot btn-slot-b" title="ボタンを押して音を鳴らし、もう一度押すと記録が完了します（最大15秒）">
-              <span class="rec-icon" id="recIconB">🔴</span>
-              <span id="btnRecordSlotBText">音Bのきろく開始</span>
-            </button>
-            <button id="btnPlaySlotB" class="btn-slot btn-slot-play" title="記録した音Bを聴く" style="display: none;">
-              ▶ 聴く
-            </button>
-            <button id="btnClearRecSlotB" class="btn-slot-clear" title="音Bを消去" style="display: none;">
-              ✕
-            </button>
-          </div>
-        </div>
-
-        <!-- 比較表示モード切替（上下に並べる / 重ね合わせ） -->
-        <div class="compare-mode-group">
-          <span class="control-label">表示方法</span>
-          <div class="mode-toggle-buttons">
-            <button id="btnRecModeSplit" class="btn-mode active" title="上段に音A、下段に音Bを並べて時間軸を比較">上下に並べる</button>
-            <button id="btnRecModeOverlay" class="btn-mode" title="音Aと音Bを同じ時間軸に重ねて表示">重ね合わせ</button>
-          </div>
-        </div>
-
-        <!-- 波形拡大ルーペの位置微調整 ＆ 拡大幅切替コントロール -->
-        <div class="loupe-control-group">
-          <div class="loupe-header">
-            <span class="control-label">🔍 拡大ルーペ位置・幅</span>
-            <span id="loupeTimeText" class="loupe-time-badge">---</span>
-          </div>
-          <div class="loupe-actions">
-            <div class="loupe-step-buttons">
-              <button id="btnLoupeLeft" class="btn-phase-step" title="ルーペ位置を少し左（前）へ移動">◀</button>
-              <button id="btnLoupeRight" class="btn-phase-step" title="ルーペ位置を少し右（後）へ移動">▶</button>
+        <!-- 【1段目】音A・音Bの記録 ＆ 表示方法 -->
+        <div class="recorder-row">
+          <!-- 音Aスロット -->
+          <div class="slot-card slot-a" id="recSlotACard">
+            <div class="slot-header">
+              <span class="slot-badge badge-a">🔵 音A（基準）</span>
+              <span class="slot-status" id="recStatusA">未記録</span>
             </div>
-            <div class="loupe-window-buttons">
-              <button class="btn-loupe-win" data-window="10" title="10ms幅（高い音・細かい波形向け）">10ms</button>
-              <button class="btn-loupe-win active" data-window="20" title="20ms幅（標準・おんさ向け）">20ms</button>
-              <button class="btn-loupe-win" data-window="50" title="50ms幅（低い音・声向け）">50ms</button>
+            <div class="slot-actions">
+              <button id="btnRecordSlotA" class="btn-slot btn-slot-a" title="ボタンを押して音を鳴らし、もう一度押すと記録が完了します（最大15秒）">
+                <span class="rec-icon" id="recIconA">🔴</span>
+                <span id="btnRecordSlotAText">音Aのきろく開始</span>
+              </button>
+              <button id="btnPlaySlotA" class="btn-slot btn-slot-play" title="記録した音Aを聴く" style="display: none;">
+                ▶ 聴く
+              </button>
+              <button id="btnClearRecSlotA" class="btn-slot-clear" title="音Aを消去" style="display: none;">
+                ✕
+              </button>
+            </div>
+          </div>
+
+          <!-- 音Bスロット -->
+          <div class="slot-card slot-b" id="recSlotBCard">
+            <div class="slot-header">
+              <span class="slot-badge badge-b">🔴 音B（比較）</span>
+              <span class="slot-status" id="recStatusB">未記録</span>
+            </div>
+            <div class="slot-actions">
+              <button id="btnRecordSlotB" class="btn-slot btn-slot-b" title="ボタンを押して音を鳴らし、もう一度押すと記録が完了します（最大15秒）">
+                <span class="rec-icon" id="recIconB">🔴</span>
+                <span id="btnRecordSlotBText">音Bのきろく開始</span>
+              </button>
+              <button id="btnPlaySlotB" class="btn-slot btn-slot-play" title="記録した音Bを聴く" style="display: none;">
+                ▶ 聴く
+              </button>
+              <button id="btnClearRecSlotB" class="btn-slot-clear" title="音Bを消去" style="display: none;">
+                ✕
+              </button>
+            </div>
+          </div>
+
+          <!-- 比較表示モード切替（上下に並べる / 重ね合わせ） -->
+          <div class="compare-mode-group">
+            <span class="control-label">表示方法</span>
+            <div class="mode-toggle-buttons">
+              <button id="btnRecModeSplit" class="btn-mode active" title="上段に音A、下段に音Bを並べて時間軸を比較">上下に並べる</button>
+              <button id="btnRecModeOverlay" class="btn-mode" title="音Aと音Bを同じ時間軸に重ねて表示">重ね合わせ</button>
             </div>
           </div>
         </div>
 
-        <!-- まるごと波形きろく用 閾値調整スライダー（タブ1と連動） -->
-        <div class="student-gate-control rec-gate-control">
-          <div class="gate-header">
-            <label for="recNoiseGateSlider" class="gate-label">🛡️ 記録スタートのしきい値（音で自動開始）</label>
-            <span id="recGateValText" class="gate-val-badge">25%</span>
+        <!-- 【2段目】比較・観察コントロール（赤＝音Bの横ずらし / オレンジ＝拡大ルーペ） -->
+        <div class="recorder-row">
+          <!-- 🔴 音Bの横位置ずらし（全体波形＆ルーペ共通反映） -->
+          <div class="rec-offset-group disabled-hint" id="recOffsetGroup">
+            <div class="rec-offset-header">
+              <span class="control-label rec-offset-label">🔴 音Bの横位置ずらし（左右あわせ）</span>
+              <span id="recOffsetValText" class="rec-offset-badge">0.00s</span>
+            </div>
+            <div class="phase-controls">
+              <button id="btnRecOffsetLeft" class="btn-phase-step" title="音Bを少し左へずらす">◀</button>
+              <input type="range" id="recOffsetSlider" class="rec-offset-slider" min="-100" max="100" value="0" title="音B（赤）の波を左右にずらして音A（青）と開始位置を揃えられます">
+              <button id="btnRecOffsetRight" class="btn-phase-step" title="音Bを少し右へずらす">▶</button>
+              <button id="btnRecOffsetReset" class="btn-phase-reset" title="ずらしを0秒に戻す">0に戻す</button>
+            </div>
           </div>
-          <div class="meter-container" title="記録開始を押した後、赤い線より大きい音を鳴らした瞬間から波形を測定し始めます">
-            <div id="recMeterFill" class="meter-fill"></div>
-            <div id="recGateLine" class="gate-threshold-line" style="left: 25%;"></div>
+
+          <!-- 🟠 波形拡大ルーペの位置微調整 ＆ 倍率切替（タブ1の目盛り設定と連動） -->
+          <div class="loupe-control-group">
+            <div class="loupe-header">
+              <span class="control-label loupe-label">🔍 拡大ルーペ（タブ1の目盛り連動）</span>
+              <span id="loupeTimeText" class="loupe-time-badge">---</span>
+            </div>
+            <div class="loupe-actions">
+              <div class="loupe-step-buttons">
+                <button id="btnLoupeLeft" class="btn-phase-step" title="ルーペ位置を少し左（前）へ移動">◀</button>
+                <button id="btnLoupeRight" class="btn-phase-step" title="ルーペ位置を少し右（後）へ移動">▶</button>
+              </div>
+              <div class="loupe-window-buttons" title="標準（×1）はタブ1のTIME/DIV・横マス数と完全一致します">
+                <button class="btn-loupe-zoom active" data-mult="1">×1(標準)</button>
+                <button class="btn-loupe-zoom" data-mult="2">×2広く</button>
+                <button class="btn-loupe-zoom" data-mult="5">×5広く</button>
+              </div>
+            </div>
           </div>
-          <input type="range" id="recNoiseGateSlider" class="slider-input" min="0" max="100" value="25" title="赤い線より大きい音が出た瞬間から記録を始めます（0%で押した瞬間からすぐ記録）">
         </div>
 
-        <!-- 実験画像保存ボタン -->
-        <div class="main-controls" style="margin-top: 4px;">
-          <button id="btnSaveRecImage" class="btn-save" title="記録した波形全体を画像として保存します">
-            📸 記録画像を保存
-          </button>
+        <!-- 【3段目】記録スタートのしきい値 ＆ 実験画像保存 -->
+        <div class="recorder-row">
+          <!-- まるごと波形きろく用 閾値調整スライダー（タブ1と連動） -->
+          <div class="student-gate-control rec-gate-control">
+            <div class="gate-header">
+              <label for="recNoiseGateSlider" class="gate-label">🛡️ 記録スタートのしきい値（音で自動開始）</label>
+              <span id="recGateValText" class="gate-val-badge">25%</span>
+            </div>
+            <div class="meter-container" title="記録開始を押した後、赤い線より大きい音を鳴らした瞬間から波形を測定し始めます">
+              <div id="recMeterFill" class="meter-fill"></div>
+              <div id="recGateLine" class="gate-threshold-line" style="left: 25%;"></div>
+            </div>
+            <input type="range" id="recNoiseGateSlider" class="slider-input" min="0" max="100" value="25" title="赤い線より大きい音が出た瞬間から記録を始めます（0%で押した瞬間からすぐ記録）">
+          </div>
+
+          <!-- 実験画像保存ボタン -->
+          <div class="main-controls">
+            <button id="btnSaveRecImage" class="btn-save" title="全体波形と拡大ルーペ（ずらした位置含む）をそのまま画像として保存します">
+              📸 記録画像を保存
+            </button>
+          </div>
         </div>
       </div>
     </section>
@@ -478,20 +501,45 @@
       </div>
 
       <div class="teacher-panel-body">
-        <!-- 0. 生徒配布用 設定リンク生成（URLパラメータ方式・パスコード/QR不要） -->
+        <!-- 0. 生徒配布用 設定リンク＆QRコード（URLパラメータ方式へ一本化） -->
         <div class="t-section t-share-section">
           <div class="t-share-header">
-            <span class="t-share-badge">🚀 おすすめ・最速</span>
-            <label class="t-section-label" style="margin-bottom: 0;">📋 生徒用配布リンク（URL共有）</label>
+            <span class="t-share-badge">🚀 かんたん配布</span>
+            <label class="t-section-label" style="margin-bottom: 0;">📋 生徒へ今の設定を配る（リンク / QRコード）</label>
           </div>
           <p class="t-section-desc" style="margin-bottom: 10px;">
-            生徒はこのリンクを開くだけで、先生が調整した設定（ゲイン・横幅・目盛り・テーマ等）のまま即座に起動します。パスコードやQR読み取りの手間は一切ありません。
+            下の設定（ゲイン・横幅・目盛り・しきい値・テーマ）を調整したら、<strong>リンクをコピー</strong>してClassroom等で配るか、<strong>QRコードを黒板に映す</strong>だけで、全生徒が同じ設定のまま即座に実験を始められます。
           </p>
+
+          <!-- 配布オプション（初期表示タブ・生徒ロック） -->
+          <div class="share-options-row">
+            <div class="share-option-field">
+              <label for="shareStartTabSelect" class="t-sublabel">最初に開く画面</label>
+              <select id="shareStartTabSelect" class="select-box share-select">
+                <option value="auto" selected>いま開いているタブ</option>
+                <option value="wave">〰️ 波形観察・比較</option>
+                <option value="record">⏱️ まるごと波形きろく</option>
+                <option value="tuner">🎚️ 音の高さしらべ</option>
+                <option value="generator">🔔 基準音を鳴らす</option>
+              </select>
+            </div>
+            <label class="share-lock-checkbox" title="ONにすると、生徒がリンクを開いたときに右上の先生用設定がパスコード保護（初期値0000）されます">
+              <input type="checkbox" id="chkShareStudentLock" checked>
+              <span>🔒 生徒画面で先生設定をパスコード保護</span>
+            </label>
+          </div>
+
           <div class="share-action-box">
-            <button id="btnCopyCurrentConfigLink" class="btn-copy-link" title="現在の設定を反映した生徒用URLをクリップボードにコピー">
-              <span class="btn-copy-icon">📋</span>
-              <span class="btn-copy-text">この設定の生徒用リンクをコピー</span>
-            </button>
+            <div class="share-buttons-grid">
+              <button id="btnCopyCurrentConfigLink" class="btn-copy-link" title="現在の設定を反映した生徒用URLをクリップボードにコピー">
+                <span class="btn-copy-icon">📋</span>
+                <span class="btn-copy-text">生徒用リンクをコピー</span>
+              </button>
+              <button id="btnShowShareQRModal" class="btn-share-qr" title="この設定リンクを大画面QRコードで表示（黒板・プロジェクター用）">
+                <span>📲</span>
+                <span>QRコードを黒板に映す</span>
+              </button>
+            </div>
             <div class="share-url-preview-wrapper">
               <input type="text" id="shareUrlPreview" class="share-url-preview" readonly placeholder="設定URLがここに生成されます">
             </div>
@@ -514,7 +562,7 @@
               <button class="btn-scene-preset" data-preset="voice">
                 <span class="scene-icon">🗣️</span>
                 <span class="scene-title">声・歌声の観察</span>
-                <span class="scene-detail">ゲイン: ×1.0 / 横: 50マス / 2.0ms</span>
+                <span class="scene-detail">ゲイン: ×1.0 / 横: 40マス / 2.0ms</span>
               </button>
               <button class="btn-preset-link-copy" data-preset="voice" title="声観察用リンクを直接コピー">🔗 リンクをコピー</button>
             </div>
@@ -522,7 +570,7 @@
               <button class="btn-scene-preset" data-preset="monochord">
                 <span class="scene-icon">🎸</span>
                 <span class="scene-title">弦・モノコード</span>
-                <span class="scene-detail">ゲイン: ×2.0 / 横: 30マス / 1.0ms</span>
+                <span class="scene-detail">ゲイン: ×2.0 / 横: 20マス / 1.0ms</span>
               </button>
               <button class="btn-preset-link-copy" data-preset="monochord" title="モノコード用リンクを直接コピー">🔗 リンクをコピー</button>
             </div>
@@ -651,37 +699,7 @@
           </label>
         </div>
 
-        <!-- 7. 授業ルーム・リアルタイム一斉同期 -->
-        <div class="t-section">
-          <label class="t-section-label">📡 授業ルーム・全生徒端末へ一斉同期</label>
-          <p class="t-section-desc">先生が設定したテーマ・ゲイン・目盛り・横マス数を全生徒のChromebook/iPadへ0.1秒で即時配信します。</p>
-          
-          <div id="roomInitialArea" style="display: block;">
-            <button id="btnStartRoom" class="btn-primary" style="width: 100%; padding: 12px; font-size: 0.95rem;">
-              🚀 授業ルームを開始する（番号・QRコード発行）
-            </button>
-          </div>
-
-          <div id="roomActiveArea" style="display: none; background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 12px; padding: 14px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-              <span style="font-weight: 700; color: #10b981; font-size: 0.9rem;">🟢 ルーム配信中</span>
-              <span id="teacherRoomCodeDisplay" style="font-size: 1.4rem; font-weight: 900; letter-spacing: 0.1em; color: var(--text-main); background: var(--bg-panel); padding: 4px 12px; border-radius: 8px; border: 1px solid var(--border-color);">#----</span>
-            </div>
-            <p style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 10px;">
-              先生がパネルの設定を変更すると、生徒画面へ自動でプッシュ同期されます（生徒の一時停止波形は保護されます）。
-            </p>
-            <div style="display: flex; gap: 8px;">
-              <button id="btnShowQRModal" class="btn-primary" style="flex: 2; padding: 8px 12px; font-size: 0.85rem;">
-                📲 参加用QRコードを表示（黒板・プロジェクター用）
-              </button>
-              <button id="btnCloseRoom" class="btn-secondary" style="flex: 1; padding: 8px 12px; font-size: 0.85rem;">
-                終了
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <!-- 8. パスコード変更 -->
+        <!-- 7. パスコード変更 -->
         <div class="t-section" style="padding: 12px 16px;">
           <div style="display: flex; justify-content: space-between; align-items: center;">
             <div>
@@ -733,23 +751,23 @@
   </div>
 
   <!-- ======================================================================
-       プロジェクター投影用 大画面QRコードモーダル
+       プロジェクター投影用 大画面QRコードモーダル（設定埋め込みURL用）
        ====================================================================== -->
   <div class="modal-overlay" id="qrModal">
-    <div class="modal-card" style="max-width: 440px; text-align: center; padding: 24px;">
-      <h3 class="modal-title" style="font-size: 1.3rem;">📲 授業ルームに参加しよう</h3>
+    <div class="modal-card" style="max-width: 460px; text-align: center; padding: 24px;">
+      <h3 class="modal-title" style="font-size: 1.3rem;">📲 実験用オシロスコープを開こう</h3>
       <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 14px;">
-        端末のカメラでQRコードを読み取るか、部屋番号を入力してください。
+        iPad・Chromebookのカメラで読み取ると、先生の設定が適用された状態で起動します。
       </p>
 
       <!-- QRコード描画用Canvas（中央配置） -->
       <div style="background: #ffffff; padding: 16px; border-radius: 16px; display: inline-block; box-shadow: 0 4px 20px rgba(0,0,0,0.3); margin-bottom: 14px;">
-        <canvas id="qrCanvas" style="display: block; width: 220px; height: 220px;"></canvas>
+        <canvas id="qrCanvas" style="display: block; width: 240px; height: 240px;"></canvas>
       </div>
 
-      <div style="background: var(--bg-canvas); border: 1px solid var(--border-color); border-radius: 10px; padding: 10px; margin-bottom: 16px;">
-        <span style="font-size: 0.8rem; color: var(--text-muted); display: block;">部屋番号（手入力用）:</span>
-        <span id="qrRoomCodeText" style="font-size: 2rem; font-weight: 900; letter-spacing: 0.15em; color: #10b981;">#----</span>
+      <div style="background: var(--bg-canvas); border: 1px solid var(--border-color); border-radius: 10px; padding: 10px 12px; margin-bottom: 16px; text-align: left;">
+        <span style="font-size: 0.76rem; color: var(--text-muted); display: block; margin-bottom: 4px;">含まれている設定内容:</span>
+        <span id="qrConfigSummary" style="font-size: 0.84rem; font-weight: 700; color: var(--text-main); line-height: 1.4; display: block;">---</span>
       </div>
 
       <button id="btnCloseQRModal" class="btn-primary" style="width: 100%; padding: 12px;">

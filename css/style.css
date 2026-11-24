@@ -1811,10 +1811,87 @@ body {
   letter-spacing: 0.04em;
 }
 
+.share-options-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+  background-color: rgba(15, 23, 42, 0.16);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 8px 12px;
+}
+
+.share-option-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.share-select {
+  padding: 5px 10px;
+  font-size: 0.82rem;
+}
+
+.share-lock-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text-main);
+  cursor: pointer;
+}
+
+.share-lock-checkbox input {
+  width: 16px;
+  height: 16px;
+  accent-color: #10b981;
+  cursor: pointer;
+}
+
 .share-action-box {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.share-buttons-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+@media (max-width: 600px) {
+  .share-buttons-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* 黒板投影用QR表示ボタン */
+.btn-share-qr {
+  background: linear-gradient(135deg, #0284c7, #0369a1);
+  color: #ffffff;
+  border: none;
+  border-radius: 10px;
+  padding: 12px 16px;
+  font-size: 0.92rem;
+  font-weight: 800;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-shadow: 0 4px 12px rgba(2, 132, 199, 0.35);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.btn-share-qr:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(2, 132, 199, 0.45);
+  background: linear-gradient(135deg, #38bdf8, #0284c7);
 }
 
 /* 設定リンク一括コピーボタン */
@@ -1952,13 +2029,84 @@ body {
   touch-action: none;
 }
 
-/* 波形拡大ルーペ操作コントロール */
-.loupe-control-group {
+/* まるごと波形きろく：中1でも迷わない手順順3段パネル */
+.recorder-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background-color: var(--bg-panel);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 14px 16px;
+  width: 100%;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+}
+
+.recorder-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  width: 100%;
+}
+
+/* 🔴 音Bの横位置ずらしコントロール（赤系アクセントで役割を明確化） */
+.rec-offset-group {
+  flex: 1.4;
+  min-width: 260px;
   display: flex;
   flex-direction: column;
   gap: 6px;
   background-color: var(--bg-canvas);
-  border: 1px solid var(--border-color);
+  border: 1.5px solid rgba(239, 68, 68, 0.4);
+  border-radius: 12px;
+  padding: 8px 12px;
+  transition: opacity 0.2s ease;
+}
+
+.rec-offset-group.disabled-hint {
+  opacity: 0.55;
+}
+
+.rec-offset-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.rec-offset-label {
+  color: #ef4444 !important;
+  font-weight: 700;
+}
+
+.rec-offset-badge {
+  font-size: 0.78rem;
+  font-weight: 800;
+  font-family: monospace;
+  color: #ef4444;
+  background-color: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  padding: 1px 7px;
+  border-radius: 8px;
+}
+
+.rec-offset-slider {
+  flex: 1;
+  min-width: 90px;
+  cursor: pointer;
+  accent-color: #ef4444;
+}
+
+/* 🟠 波形拡大ルーペ操作コントロール（オレンジ系アクセントで役割を明確化） */
+.loupe-control-group {
+  flex: 1;
+  min-width: 250px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background-color: var(--bg-canvas);
+  border: 1.5px solid rgba(245, 158, 11, 0.45);
   border-radius: 12px;
   padding: 8px 12px;
 }
@@ -1968,6 +2116,11 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+}
+
+.loupe-label {
+  color: #f59e0b !important;
+  font-weight: 700;
 }
 
 .loupe-time-badge {
@@ -1984,6 +2137,7 @@ body {
 .loupe-actions {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
 }
 
@@ -1997,40 +2151,28 @@ body {
   gap: 4px;
 }
 
-.btn-loupe-win {
+.btn-loupe-zoom {
   background-color: var(--bg-panel);
   border: 1px solid var(--border-color);
   color: var(--text-main);
   border-radius: 6px;
   padding: 5px 8px;
-  font-size: 0.76rem;
+  font-size: 0.75rem;
   font-weight: 700;
   cursor: pointer;
   transition: all 0.15s ease;
+  white-space: nowrap;
 }
 
-.btn-loupe-win:hover {
+.btn-loupe-zoom:hover {
   border-color: #f59e0b;
   color: #f59e0b;
 }
 
-.btn-loupe-win.active {
+.btn-loupe-zoom.active {
   background-color: #f59e0b;
   border-color: #f59e0b;
   color: #0f172a;
-}
-
-.recorder-panel {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  background-color: var(--bg-panel);
-  border: 1px solid var(--border-color);
-  border-radius: 16px;
-  padding: 16px;
-  width: 100%;
-  align-items: center;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
 }
 
 /* トリガー待機中ボタンのアニメーション（オレンジ系でパルス表示） */

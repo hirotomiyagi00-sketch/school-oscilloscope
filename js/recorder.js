@@ -46,13 +46,17 @@ export class WaveformRecorder {
     // 比較表示モード: "split"（上下に並べる） または "overlay"（重ね合わせ）
     this.displayMode = "split";
 
-    // --- 波形拡大ルーペ（2段表示）用パラメータ ---
-    // 【なぜ全体表示と拡大ルーペを2段で同時表示するのか】
-    // 数秒〜15秒の全体波形（減衰速度の観察）と、数十ミリ秒のミクロ波形（波の形・音色の観察）は
-    // 時間スケールが数百倍異なるため、1画面に全体＋カーソル位置の拡大ルーペを並べることで
-    // 生徒がズーム操作で迷子にならず、そのまま1枚の提出画像に両方収められるようにするため。
+    // --- 波形拡大ルーペ（2段表示）＆ 音B左右位置ずらし用パラメータ ---
+    // 【なぜタブ1の縦軸・横軸設定をルーペへ同期させるのか】
+    // 先生が「波形観察・比較（タブ1）」で調整した TIME/DIV・VOLTS/DIV・横マス数を
+    // ルーペでも全く同じレンジで反映させることで、タブ間を行き来しても違和感なく
+    // おんさや楽器の波形を同じ縮尺で観察・比較できるようにするため。
     this.inspectTimeSec = 0;      // ルーペで拡大表示する中心時刻（秒）
-    this.loupeWindowMs = 20;      // ルーペの表示時間幅（ミリ秒: 10 / 20 / 50）
+    this.timeDivMs = 1.0;         // タブ1連動: 1大マスあたりの時間（ms）
+    this.voltsDiv = 0.5;          // タブ1連動: 1縦マスあたりの振幅（V）
+    this.horizontalDivs = 50;     // タブ1連動: 横の小マス数（10〜50）
+    this.loupeZoomMult = 1;       // ルーペの相対時間倍率（1 = タブ1と完全一致, 2, 5）
+    this.slotBOffsetSec = 0;      // 音Bの横位置ずらし量（秒: 正で右へ、負で左へ移動）
     this.overviewRatio = 0.58;    // Canvas高さに対する上段（全体波形）の占有比率
 
     // 音声再生管理（Web Audio API）
@@ -244,7 +248,7 @@ export class WaveformRecorder {
     const peakSec = maxIdx / this.sampleRate;
     const duration = data.length / this.sampleRate;
     // ルーペ窓の半分だけ端から離して中央に綺麗に収まるようにする
-    const halfWinSec = (this.loupeWindowMs / 1000) / 2;
+    const halfWinSec = (this.getLoupeWindowMs() / 1000) / 2;
     return Math.max(halfWinSec, Math.min(Math.max(0, duration - halfWinSec), peakSec));
   }
 
@@ -278,16 +282,97 @@ export class WaveformRecorder {
   }
 
   /**
+   * タブ1（波形観察・比較）の縦軸・横軸レンジ設定をルーペへ同期する
+   * 【なぜタブ1と同じパラメータを受け取るのか】
+   * タブ1とまるごと波形きろくのルーペで時間幅・振幅スケール・方眼マス数を完全統一し、
+   * 先生が準備した実験設定のまま波の形を観察できるようにするため。
+   *
+   * @param {Object} scale
+   * @param {number} [scale.timeDivMs] - TIME/DIV（ms）
+   * @param {number} [scale.voltsDiv] - VOLTS/DIV（V）
+   * @param {number} [scale.horizontalDivs] - 横の小マス数（10〜50）
+   */
+  setOscilloscopeScale({ timeDivMs, voltsDiv, horizontalDivs } = {}) {
+    if (timeDivMs !== undefined && !isNaN(Number(timeDivMs))) {
+      this.timeDivMs = Math.max(0.1, Number(timeDivMs));
+    }
+    if (voltsDiv !== undefined && !isNaN(Number(voltsDiv))) {
+      this.voltsDiv = Math.max(0.05, Number(voltsDiv));
+    }
+    if (horizontalDivs !== undefined && !isNaN(Number(horizontalDivs))) {
+      this.horizontalDivs = Math.max(10, Math.min(100, Number(horizontalDivs)));
+    }
+    this.draw();
+  }
+
+  /**
+   * ルーペの相対時間倍率（×1=タブ1と同一 / ×2 / ×5）を設定して再描画する
+   * @param {number} mult
+   */
+  setLoupeZoomMult(mult) {
+    this.loupeZoomMult = Math.max(1, Math.min(20, Number(mult) || 1));
+    this.draw();
+  }
+
+  /**
+   * 現在のルーペ相対時間倍率を取得する
+   * @returns {number}
+   */
+  getLoupeZoomMult() {
+    return this.loupeZoomMult;
+  }
+
+  /**
+   * 現在のルーペ表示時間幅（ミリ秒）をタブ1設定から算出して取得する
+   * @returns {number}
+   */
+  getLoupeWindowMs() {
+    const mainDivs = this.horizontalDivs / 5;
+    return this.timeDivMs * mainDivs * this.loupeZoomMult;
+  }
+
+  /**
+   * 音Bの横位置ずらし量（秒）を設定して再描画する
+   * 【なぜ音Bのみをずらすのか】
+   * 音Aを基準として固定し、音Bだけを左右にスライドして立ち上がり位置を揃えることで、
+   * タブ1の位相シフトと同じ操作感にし、中学1年生が迷わないようにするため。
+   *
+   * @param {number} sec - ずらし量（秒、正で右へ、負で左へ）
+   */
+  setSlotBOffsetSec(sec) {
+    const maxDur = Math.max(2.0, this.getMaxDuration());
+    const limit = maxDur;
+    this.slotBOffsetSec = Math.max(-limit, Math.min(limit, Number(sec) || 0));
+    this.draw();
+  }
+
+  /**
+   * 音Bの横位置を相対移動（微調整）する
+   * @param {number} deltaSec - 移動量（秒）
+   */
+  nudgeSlotBOffsetSec(deltaSec) {
+    this.setSlotBOffsetSec(this.slotBOffsetSec + deltaSec);
+  }
+
+  /**
+   * 現在の音B横位置ずらし量（秒）を取得する
+   * @returns {number}
+   */
+  getSlotBOffsetSec() {
+    return this.slotBOffsetSec;
+  }
+
+  /**
    * ルーペの検査中心時刻（秒）を設定して再描画する
    * @param {number} sec - 秒
    */
   setInspectTime(sec) {
-    const maxDataDur = this.getMaxDataDuration();
-    if (maxDataDur <= 0) {
+    const maxDur = this.getMaxDuration();
+    if (maxDur <= 0) {
       this.inspectTimeSec = 0;
       return;
     }
-    this.inspectTimeSec = Math.max(0, Math.min(maxDataDur, Number(sec) || 0));
+    this.inspectTimeSec = Math.max(0, Math.min(maxDur, Number(sec) || 0));
     this.draw();
   }
 
@@ -308,23 +393,6 @@ export class WaveformRecorder {
   }
 
   /**
-   * ルーペの拡大表示時間幅（ミリ秒）を設定して再描画する
-   * @param {number} ms - 10 / 20 / 50 など
-   */
-  setLoupeWindowMs(ms) {
-    this.loupeWindowMs = Math.max(5, Math.min(200, Number(ms) || 20));
-    this.draw();
-  }
-
-  /**
-   * 現在のルーペ拡大幅（ミリ秒）を取得する
-   * @returns {number}
-   */
-  getLoupeWindowMs() {
-    return this.loupeWindowMs;
-  }
-
-  /**
    * 指定したスロットの録音データを消去する
    * @param {'A'|'B'} slot
    */
@@ -334,6 +402,7 @@ export class WaveformRecorder {
       this.slotAData = null;
     } else {
       this.slotBData = null;
+      this.slotBOffsetSec = 0;
     }
     this.draw();
   }
@@ -434,7 +503,11 @@ export class WaveformRecorder {
         this.ctx.lineTo(w, halfOverviewH);
         this.ctx.stroke();
 
-        // 下段: 音B
+        // 下段: 音B（横位置ずらし slotBOffsetSec を適用）
+        const offsetSign = this.slotBOffsetSec > 0 ? "+" : "";
+        const offsetLabel = Math.abs(this.slotBOffsetSec) >= 0.005
+          ? ` / 位置: ${offsetSign}${this.slotBOffsetSec.toFixed(2)}s`
+          : "";
         this.drawSingleSlotTrack({
           x: 0,
           y: halfOverviewH,
@@ -443,10 +516,11 @@ export class WaveformRecorder {
           data: this.slotBData,
           duration: durationB,
           maxDuration: maxDuration,
-          title: "🔴 音B（比較）",
+          title: `🔴 音B（比較${offsetLabel}）`,
           color: "#ef4444",
           theme: theme,
-          showTimeline: true
+          showTimeline: true,
+          offsetSec: this.slotBOffsetSec
         });
       } else {
         // --- 重ね合わせモード または 単独スロット表示 ---
@@ -560,7 +634,7 @@ export class WaveformRecorder {
   /**
    * 単一トラック（上下分割時の各領域）を描画
    */
-  drawSingleSlotTrack({ x, y, width, height, data, duration, maxDuration, title, color, theme, showTimeline }) {
+  drawSingleSlotTrack({ x, y, width, height, data, duration, maxDuration, title, color, theme, showTimeline, offsetSec = 0 }) {
     // 背景グリッドと時間目盛りの描画
     this.drawTimeGrid(x, y, width, height, maxDuration, theme, showTimeline);
 
@@ -573,11 +647,8 @@ export class WaveformRecorder {
 
     if (!data) return;
 
-    // 波形のエンベロープ（包絡線）描画
-    // 【なぜエンベロープ方式を採用するのか】
-    // 何十万ものサンプルをそのまま描画すると線が潰れて塗りつぶされるため、
-    // 各ピクセルごとの最大値と最小値を抽出し、音の輪郭をクリアに可視化する。
-    this.drawEnvelope(x, y, width, height, data, maxDuration, color);
+    // 波形のエンベロープ（包絡線）描画（横位置ずらし offsetSec を適用）
+    this.drawEnvelope(x, y, width, height, data, maxDuration, color, offsetSec);
   }
 
   /**
@@ -587,14 +658,14 @@ export class WaveformRecorder {
     // 背景グリッドと時間目盛り
     this.drawTimeGrid(x, y, width, height, maxDuration, theme, true);
 
-    // 波形Aの描画（青色・やや半透明）
+    // 波形Aの描画（青色・基準位置固定）
     if (dataA) {
-      this.drawEnvelope(x, y, width, height, dataA, maxDuration, "rgba(59, 130, 246, 0.75)");
+      this.drawEnvelope(x, y, width, height, dataA, maxDuration, "rgba(59, 130, 246, 0.75)", 0);
     }
 
-    // 波形Bの描画（赤色・やや半透明）
+    // 波形Bの描画（赤色・横位置ずらし slotBOffsetSec を適用）
     if (dataB) {
-      this.drawEnvelope(x, y, width, height, dataB, maxDuration, "rgba(239, 68, 68, 0.75)");
+      this.drawEnvelope(x, y, width, height, dataB, maxDuration, "rgba(239, 68, 68, 0.75)", this.slotBOffsetSec);
     }
 
     // 凡例表示（左上）
@@ -610,7 +681,11 @@ export class WaveformRecorder {
     }
     if (dataB) {
       this.ctx.fillStyle = "#ef4444";
-      this.ctx.fillText(`🔴 音B: ${durationB.toFixed(2)}s`, labelX, y + 8);
+      const offsetSign = this.slotBOffsetSec > 0 ? "+" : "";
+      const offsetLabel = Math.abs(this.slotBOffsetSec) >= 0.005
+        ? ` (位置:${offsetSign}${this.slotBOffsetSec.toFixed(2)}s)`
+        : "";
+      this.ctx.fillText(`🔴 音B: ${durationB.toFixed(2)}s${offsetLabel}`, labelX, y + 8);
     }
   }
 
@@ -661,29 +736,42 @@ export class WaveformRecorder {
 
   /**
    * 音声データのエンベロープ（最大値・最小値）を美しく描画する内部関数
+   * 【なぜピクセル座標から時刻逆算してオフセット適用するのか】
+   * 音Bを左右に任意秒数ずらした際も、描画領域からはみ出さずに
+   * 音Aと同一時間軸スケール上で正確に比較できるようにするため。
    */
-  drawEnvelope(x, y, width, height, data, maxDuration, color) {
+  drawEnvelope(x, y, width, height, data, maxDuration, color, offsetSec = 0) {
     const ctx = this.ctx;
     const centerY = y + height / 2;
     const amplitudeH = (height / 2) * 0.88; // 上下に少し余白を残す
-
     const totalSamples = data.length;
-    const duration = totalSamples / this.sampleRate;
-    // 描画される実際の横幅
-    const plotWidth = Math.min(width, (duration / maxDuration) * width);
+    if (totalSamples === 0 || maxDuration <= 0 || width <= 0) return;
 
-    ctx.fillStyle = color;
+    const secPerPixel = maxDuration / width;
+    const pixels = Math.max(1, Math.floor(width));
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x, y, width, height);
+    ctx.clip();
+
     ctx.strokeStyle = color;
     ctx.lineWidth = 1;
-
-    // 1ピクセル幅ごとに最大値・最小値を集計して縦線を描く
-    const pixels = Math.max(1, Math.floor(plotWidth));
-    const samplesPerPixel = totalSamples / pixels;
-
     ctx.beginPath();
+
     for (let px = 0; px < pixels; px++) {
-      const startIdx = Math.floor(px * samplesPerPixel);
-      const endIdx = Math.min(totalSamples, Math.floor((px + 1) * samplesPerPixel));
+      // 画面上の現在ピクセル区間が、録音データ内のどのサンプル範囲に相当するかを計算
+      const tStart = px * secPerPixel - offsetSec;
+      const tEnd = (px + 1) * secPerPixel - offsetSec;
+
+      const rawStartIdx = Math.floor(tStart * this.sampleRate);
+      const rawEndIdx = Math.ceil(tEnd * this.sampleRate);
+
+      // データ範囲外は描画しない
+      if (rawEndIdx <= 0 || rawStartIdx >= totalSamples) continue;
+
+      const startIdx = Math.max(0, rawStartIdx);
+      const endIdx = Math.min(totalSamples, Math.max(startIdx + 1, rawEndIdx));
 
       let min = 1.0;
       let max = -1.0;
@@ -707,6 +795,7 @@ export class WaveformRecorder {
       ctx.lineTo(drawX, bottomY);
     }
     ctx.stroke();
+    ctx.restore();
   }
 
   /**
@@ -721,7 +810,8 @@ export class WaveformRecorder {
     const cursorX = Math.max(0, Math.min(w, (this.inspectTimeSec / maxDuration) * w));
 
     // ルーペがカバーする時間幅のハイライト帯（視認性のため最小6pxを確保）
-    const windowWidthPx = Math.max(6, ((this.loupeWindowMs / 1000) / maxDuration) * w);
+    const loupeWinMs = this.getLoupeWindowMs();
+    const windowWidthPx = Math.max(6, ((loupeWinMs / 1000) / maxDuration) * w);
 
     ctx.save();
     ctx.fillStyle = "rgba(245, 158, 11, 0.20)";
@@ -761,10 +851,10 @@ export class WaveformRecorder {
   }
 
   /**
-   * 下段の「波形拡大ルーペ」エリア（方眼グリッド＋ミクロ波形＋案内ラベル）を描画する関数
-   * 【なぜ10分割の方眼グリッドと1マス時間表記を入れるのか】
-   * タブ1のオシロスコープ（ms/div）と同じ感覚で波の細かさ（振動数）や
-   * 山と谷の形（音色）・高さ（振幅）を読み取れるようにするため。
+   * 下段の「波形拡大ルーペ」エリア（タブ1連動の方眼グリッド＋ミクロ波形）を描画する関数
+   * 【なぜタブ1（波形観察・比較）と全く同じマス目・レンジで描画するのか】
+   * 先生が設定した TIME/DIV・VOLTS/DIV・横マス数 をルーペにもそのまま反映することで、
+   * 縦横の縮尺の違和感をなくし、タブ1で見た波形と同じ感覚で減衰中の波を観察できるようにするため。
    */
   drawLoupeArea({ x, y, width, height, dataA, dataB, theme }) {
     const ctx = this.ctx;
@@ -775,22 +865,34 @@ export class WaveformRecorder {
     ctx.rect(x, y, width, height);
     ctx.clip();
 
-    // ルーペ領域の背景をわずかに区別（暗テーマ・明テーマ両対応の微調整）
     ctx.fillStyle = theme.bg;
     ctx.fillRect(x, y, width, height);
 
     const centerY = y + height / 2;
-    const cols = 10; // 横10マス（例: 20ms幅なら 1マス = 2.0ms）
-    const rows = 4;  // 縦4マス
-    const colW = width / cols;
+    const totalSubCols = this.horizontalDivs; // タブ1と同じ横小マス数 (10〜50)
+    const subColW = width / totalSubCols;
+    const rows = 8; // タブ1と同じ縦8マス構成（案A: 画面比率を完全一致）
     const rowH = height / rows;
 
-    // --- 1. 方眼グリッド描画 ---
-    ctx.strokeStyle = theme.grid;
+    // --- 1. サブ目盛り線（5小マス以外の細かい縦線） ---
+    ctx.strokeStyle = theme.subGrid;
     ctx.lineWidth = 1;
     ctx.beginPath();
-    for (let c = 1; c < cols; c++) {
-      const gx = x + c * colW;
+    for (let i = 1; i < totalSubCols; i++) {
+      if (i % 5 !== 0) {
+        const gx = x + i * subColW;
+        ctx.moveTo(gx, y);
+        ctx.lineTo(gx, y + height);
+      }
+    }
+    ctx.stroke();
+
+    // --- 2. 主グリッド線（横は5小マスごと、縦は8マス） ---
+    ctx.strokeStyle = theme.grid;
+    ctx.lineWidth = 1.1;
+    ctx.beginPath();
+    for (let i = 5; i < totalSubCols; i += 5) {
+      const gx = x + i * subColW;
       ctx.moveTo(gx, y);
       ctx.lineTo(gx, y + height);
     }
@@ -801,15 +903,15 @@ export class WaveformRecorder {
     }
     ctx.stroke();
 
-    // --- 2. 中心線（0V水平線 ＆ 中央時刻の垂直線） ---
+    // --- 3. 中心線（0V水平線 ＆ 中央時刻の垂直線） ---
     ctx.strokeStyle = theme.centerLine;
-    ctx.lineWidth = 1.4;
+    ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.moveTo(x, centerY);
     ctx.lineTo(x + width, centerY);
     ctx.stroke();
 
-    // 中央の検査基準時刻ライン（点線）
+    // 中央の検査基準時刻ライン（オレンジ点線）
     ctx.save();
     ctx.strokeStyle = "rgba(245, 158, 11, 0.55)";
     ctx.lineWidth = 1.2;
@@ -820,22 +922,26 @@ export class WaveformRecorder {
     ctx.stroke();
     ctx.restore();
 
-    // --- 3. 音A・音Bのミクロ波形描画（音Aと音Bで同一縦スケールを厳守し振幅差を正確に比較） ---
+    // --- 4. 音A・音Bのミクロ波形描画（タブ1の VOLTS/DIV と横時間幅を完全適用） ---
+    // 縦8マス換算で pixelsPerVolt を算出（タブ1と同じ画面比率で振幅を表示）
+    const pixelsPerVolt = (height / rows) / this.voltsDiv;
     if (dataA) {
-      this.drawLoupeWaveform(x, y, width, height, dataA, "#3b82f6", 2.2);
+      this.drawLoupeWaveform(x, y, width, height, dataA, "#3b82f6", 2.2, pixelsPerVolt, 0);
     }
     if (dataB) {
-      this.drawLoupeWaveform(x, y, width, height, dataB, "#ef4444", 2.2);
+      this.drawLoupeWaveform(x, y, width, height, dataB, "#ef4444", 2.2, pixelsPerVolt, this.slotBOffsetSec);
     }
 
-    // --- 4. ルーペ見出し・目盛り情報ラベル ---
-    const msPerDiv = (this.loupeWindowMs / cols).toFixed(1);
-    const headerText = `🔍 波形拡大ルーペ: ${this.inspectTimeSec.toFixed(2)}s 付近（幅 ${this.loupeWindowMs}ms / 1マス ${msPerDiv}ms）`;
-    ctx.font = "bold 12px sans-serif";
+    // --- 5. ルーペ見出し・目盛り情報ラベル ---
+    const winMs = this.getLoupeWindowMs();
+    const effTimeDivMs = this.timeDivMs * this.loupeZoomMult;
+    const multTag = this.loupeZoomMult > 1 ? ` [×${this.loupeZoomMult}]` : "";
+    const headerText = `🔍 拡大ルーペ: ${this.inspectTimeSec.toFixed(2)}s 付近（幅 ${winMs.toFixed(1)}ms / TIME ${effTimeDivMs.toFixed(1)}ms・VOLT ${this.voltsDiv.toFixed(1)}V・横${this.horizontalDivs}マス${multTag}）`;
+    ctx.font = "bold 11.5px sans-serif";
     ctx.textAlign = "left";
     ctx.textBaseline = "top";
     ctx.fillStyle = "#f59e0b";
-    ctx.fillText(headerText, x + 12, y + 7);
+    ctx.fillText(headerText, x + 12, y + 6);
 
     // 右下に操作ヒント（控えめ表示）
     ctx.font = "11px sans-serif";
@@ -843,25 +949,28 @@ export class WaveformRecorder {
     ctx.textBaseline = "bottom";
     ctx.fillStyle = theme.osdColor || "#64748b";
     ctx.globalAlpha = 0.75;
-    ctx.fillText("上段をタップ／ドラッグで見たい瞬間へ移動", x + width - 10, y + height - 5);
+    ctx.fillText("上段タップで移動 / 下段ドラッグで微調整", x + width - 10, y + height - 5);
 
     ctx.restore();
   }
 
   /**
-   * 指定時刻の前後（loupeWindowMs）の生サンプルを滑らかな折れ線で描画する関数
-   * 【なぜピクセル間引きせず全サンプルを描画するのか】
-   * 10〜50ms区間は高々440〜2200サンプル程度のため、全サンプルをそのまま lineTo で
-   * 結ぶことで高周波の倍音やサイン波の山・谷が一切潰れず忠実に再現できるため。
+   * 指定時刻の前後（タブ1連動の時間幅）の生サンプルを滑らかな折れ線で描画する関数
+   * 【なぜ offsetSec を考慮するのか】
+   * 上段の全体波形で音Bを左右にずらした位置関係が、そのまま下段の拡大ルーペでも
+   * 寸分違わず再現されるようにするため。
    */
-  drawLoupeWaveform(x, y, width, height, data, color, lineWidth = 2.2) {
+  drawLoupeWaveform(x, y, width, height, data, color, lineWidth = 2.2, pixelsPerVolt = 100, offsetSec = 0) {
     const ctx = this.ctx;
     const centerY = y + height / 2;
-    const amplitudeH = (height / 2) * 0.86;
 
-    const halfWindowSamples = Math.floor(((this.loupeWindowMs / 1000) * this.sampleRate) / 2);
+    const loupeWinMs = this.getLoupeWindowMs();
+    const halfWindowSamples = Math.max(1, Math.floor(((loupeWinMs / 1000) * this.sampleRate) / 2));
     const totalWindowSamples = Math.max(2, halfWindowSamples * 2);
-    const centerSample = Math.round(this.inspectTimeSec * this.sampleRate);
+
+    // 表示時刻 inspectTimeSec に対するデータ内の実参照時刻は (inspectTimeSec - offsetSec)
+    const targetDataSec = this.inspectTimeSec - offsetSec;
+    const centerSample = Math.round(targetDataSec * this.sampleRate);
     const startSample = centerSample - halfWindowSamples;
     const endSample = centerSample + halfWindowSamples;
 
@@ -876,11 +985,15 @@ export class WaveformRecorder {
     ctx.lineJoin = "round";
     ctx.beginPath();
 
+    // サンプル数が非常に多い場合（例: 100ms超の広い設定時）でも描画負荷を抑える安全ステップ
+    const span = clampedEnd - clampedStart;
+    const step = span > 6000 ? Math.floor(span / 3000) : 1;
+
     let isFirst = true;
-    for (let i = clampedStart; i <= clampedEnd; i++) {
+    for (let i = clampedStart; i <= clampedEnd; i += step) {
       const ratio = (i - startSample) / totalWindowSamples;
       const drawX = x + ratio * width;
-      const drawY = centerY - data[i] * amplitudeH;
+      const drawY = centerY - data[i] * pixelsPerVolt;
 
       if (isFirst) {
         ctx.moveTo(drawX, drawY);
