@@ -1004,6 +1004,67 @@ body {
   width: 100%;
 }
 
+/* 測定モード切替バー（1つの音 / 2つの音をくらべる） */
+.measure-mode-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 2px 4px;
+}
+
+.measure-mode-label {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.measure-mode-toggle {
+  display: inline-flex;
+  background-color: var(--bg-panel);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 3px;
+  gap: 4px;
+}
+
+.btn-measure-mode {
+  background-color: transparent;
+  color: var(--text-muted);
+  border: none;
+  border-radius: 7px;
+  padding: 6px 14px;
+  font-size: 0.84rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  white-space: nowrap;
+}
+
+.btn-measure-mode:hover {
+  color: var(--text-main);
+}
+
+.btn-measure-mode.active {
+  background-color: var(--accent-color);
+  color: #ffffff;
+  box-shadow: 0 2px 8px var(--accent-glow);
+}
+
+@media (max-width: 600px) {
+  .measure-mode-bar {
+    justify-content: space-between;
+  }
+  .measure-mode-toggle {
+    flex: 1;
+  }
+  .btn-measure-mode {
+    flex: 1;
+    padding: 6px 8px;
+    font-size: 0.8rem;
+  }
+}
+
 /* ======================================================================
    10. 【タブ2】音の高さしらべ（チューナー） スタイル
    ====================================================================== */

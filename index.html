@@ -53,6 +53,19 @@
       </button>
     </nav>
 
+    <!-- 測定モード切替バー（タブ1「波形観察」・タブ2「まるごと波形きろく」共通連動） -->
+    <div class="measure-mode-bar" id="measureModeBar">
+      <span class="measure-mode-label">測定モード:</span>
+      <div class="measure-mode-toggle" role="group" aria-label="測定モードの切り替え">
+        <button id="btnModeSingle" class="btn-measure-mode active" title="1つの音だけをシンプルに観察・記録します（標準）">
+          〰️ 1つの音
+        </button>
+        <button id="btnModeCompare" class="btn-measure-mode" title="音Aと音Bの2つの音を保存・記録して比べます">
+          ⚖️ 2つの音をくらべる
+        </button>
+      </div>
+    </div>
+
     <!-- ======================================================================
          【タブ1】波形観察・比較画面
          ====================================================================== -->
@@ -83,8 +96,8 @@
         </div>
       </div>
 
-      <!-- 波形比較 ＆ 手動位相シフトパネル -->
-      <div class="compare-panel">
+      <!-- 波形比較 ＆ 手動位相シフトパネル（2音比較モード時のみ表示） -->
+      <div class="compare-panel" id="waveComparePanel" style="display: none;">
         <!-- 音Aスロット -->
         <div class="slot-card slot-a">
           <div class="slot-header">
@@ -309,38 +322,38 @@
 
         <!-- OSD情報バッジ -->
         <div class="osd-overlay">
-          <div class="osd-badge" id="osdRecMode">モード: 上下に並べる</div>
-          <div class="osd-badge" id="osdRecA">音A: 未記録</div>
-          <div class="osd-badge" id="osdRecB">音B: 未記録</div>
+          <div class="osd-badge" id="osdRecMode" style="display: none;">モード: 上下に並べる</div>
+          <div class="osd-badge" id="osdRecA">きろく: 未記録</div>
+          <div class="osd-badge" id="osdRecB" style="display: none;">音B: 未記録</div>
         </div>
       </div>
 
       <!-- まるごと波形きろく 操作パネル（中1でも迷わない手順順3段レイアウト） -->
       <div class="recorder-panel">
-        <!-- 【1段目】音A・音Bの記録 ＆ 表示方法 -->
+        <!-- 【1段目】音A（単一時は「音のきろく」）・音Bの記録 ＆ 表示方法 -->
         <div class="recorder-row">
-          <!-- 音Aスロット -->
+          <!-- 音Aスロット（1つの音モード時はメインの記録カードとして表示） -->
           <div class="slot-card slot-a" id="recSlotACard">
             <div class="slot-header">
-              <span class="slot-badge badge-a">🔵 音A（基準）</span>
+              <span class="slot-badge badge-a" id="recBadgeA">🎙️ 音のきろく</span>
               <span class="slot-status" id="recStatusA">未記録</span>
             </div>
             <div class="slot-actions">
               <button id="btnRecordSlotA" class="btn-slot btn-slot-a" title="ボタンを押して音を鳴らし、もう一度押すと記録が完了します（最大15秒）">
                 <span class="rec-icon" id="recIconA">🔴</span>
-                <span id="btnRecordSlotAText">音Aのきろく開始</span>
+                <span id="btnRecordSlotAText">きろく開始</span>
               </button>
-              <button id="btnPlaySlotA" class="btn-slot btn-slot-play" title="記録した音Aを聴く" style="display: none;">
+              <button id="btnPlaySlotA" class="btn-slot btn-slot-play" title="記録した音を聴く" style="display: none;">
                 ▶ 聴く
               </button>
-              <button id="btnClearRecSlotA" class="btn-slot-clear" title="音Aを消去" style="display: none;">
+              <button id="btnClearRecSlotA" class="btn-slot-clear" title="記録を消去" style="display: none;">
                 ✕
               </button>
             </div>
           </div>
 
-          <!-- 音Bスロット -->
-          <div class="slot-card slot-b" id="recSlotBCard">
+          <!-- 音Bスロット（2音比較モード時のみ表示） -->
+          <div class="slot-card slot-b" id="recSlotBCard" style="display: none;">
             <div class="slot-header">
               <span class="slot-badge badge-b">🔴 音B（比較）</span>
               <span class="slot-status" id="recStatusB">未記録</span>
@@ -359,8 +372,8 @@
             </div>
           </div>
 
-          <!-- 比較表示モード切替（上下に並べる / 重ね合わせ） -->
-          <div class="compare-mode-group">
+          <!-- 比較表示モード切替（2音比較モード時のみ表示） -->
+          <div class="compare-mode-group" id="recCompareModeGroup" style="display: none;">
             <span class="control-label">表示方法</span>
             <div class="mode-toggle-buttons">
               <button id="btnRecModeSplit" class="btn-mode active" title="上段に音A、下段に音Bを並べて時間軸を比較">上下に並べる</button>
@@ -371,8 +384,8 @@
 
         <!-- 【2段目】比較・観察コントロール（赤＝音Bの横ずらし / オレンジ＝拡大ルーペ） -->
         <div class="recorder-row">
-          <!-- 🔴 音Bの横位置ずらし（全体波形＆ルーペ共通反映） -->
-          <div class="rec-offset-group disabled-hint" id="recOffsetGroup">
+          <!-- 🔴 音Bの横位置ずらし（2音比較モード時のみ表示） -->
+          <div class="rec-offset-group disabled-hint" id="recOffsetGroup" style="display: none;">
             <div class="rec-offset-header">
               <span class="control-label rec-offset-label">🔴 音Bの横位置ずらし（左右あわせ）</span>
               <span id="recOffsetValText" class="rec-offset-badge">0.00s</span>
@@ -511,7 +524,7 @@
             下の設定（ゲイン・横幅・目盛り・しきい値・テーマ）を調整したら、<strong>リンクをコピー</strong>してClassroom等で配るか、<strong>QRコードを黒板に映す</strong>だけで、全生徒が同じ設定のまま即座に実験を始められます。
           </p>
 
-          <!-- 配布オプション（初期表示タブ・生徒ロック） -->
+          <!-- 配布オプション（初期表示タブ・初期モード・生徒ロック） -->
           <div class="share-options-row">
             <div class="share-option-field">
               <label for="shareStartTabSelect" class="t-sublabel">最初に開く画面</label>
@@ -521,6 +534,13 @@
                 <option value="record">⏱️ まるごと波形きろく</option>
                 <option value="tuner">🎚️ 音の高さしらべ</option>
                 <option value="generator">🔔 基準音を鳴らす</option>
+              </select>
+            </div>
+            <div class="share-option-field">
+              <label for="shareCompareModeSelect" class="t-sublabel">初期モード</label>
+              <select id="shareCompareModeSelect" class="select-box share-select">
+                <option value="0" selected>〰️ 1つの音（標準）</option>
+                <option value="1">⚖️ 2つの音をくらべる</option>
               </select>
             </div>
             <label class="share-lock-checkbox" title="ONにすると、生徒がリンクを開いたときに右上の先生用設定がパスコード保護（初期値0000）されます">

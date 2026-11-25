@@ -86,6 +86,7 @@ const btnApplyTeacherSettings = document.getElementById("btnApplyTeacherSettings
 const btnCopyCurrentConfigLink = document.getElementById("btnCopyCurrentConfigLink");
 const btnShowShareQRModal = document.getElementById("btnShowShareQRModal");
 const shareStartTabSelect = document.getElementById("shareStartTabSelect");
+const shareCompareModeSelect = document.getElementById("shareCompareModeSelect");
 const chkShareStudentLock = document.getElementById("chkShareStudentLock");
 const shareUrlPreview = document.getElementById("shareUrlPreview");
 const toastNotification = document.getElementById("toastNotification");
@@ -137,6 +138,10 @@ const btnCancelModal = document.getElementById("btnCancelModal");
 const btnConfirmSave = document.getElementById("btnConfirmSave");
 
 // --- 波形比較＆手動位相シフト関連の要素 ---
+const measureModeBar = document.getElementById("measureModeBar");
+const btnModeSingle = document.getElementById("btnModeSingle");
+const btnModeCompare = document.getElementById("btnModeCompare");
+const waveComparePanel = document.getElementById("waveComparePanel");
 const btnSaveSlotA = document.getElementById("btnSaveSlotA");
 const btnClearSlotA = document.getElementById("btnClearSlotA");
 const statusA = document.getElementById("statusA");
@@ -168,6 +173,8 @@ const osdRecA = document.getElementById("osdRecA");
 const osdRecB = document.getElementById("osdRecB");
 const recSlotACard = document.getElementById("recSlotACard");
 const recSlotBCard = document.getElementById("recSlotBCard");
+const recBadgeA = document.getElementById("recBadgeA");
+const recCompareModeGroup = document.getElementById("recCompareModeGroup");
 const recStatusA = document.getElementById("recStatusA");
 const recStatusB = document.getElementById("recStatusB");
 const btnRecordSlotA = document.getElementById("btnRecordSlotA");
@@ -228,6 +235,7 @@ let isRunning = false;
 let isFrozen = false;
 let lastAudioData = null;
 let currentTab = "wave"; // "wave" | "record" | "tuner" | "generator"
+let isCompareMode = false; // false: 1つの音（標準） / true: 2つの音をくらべる
 let currentExportSource = "oscilloscope"; // "oscilloscope" | "recorder"
 let isTonePlaying = false;
 let currentToneFreq = 440;
@@ -472,6 +480,11 @@ function generateStudentUrl(customParams = {}) {
     ? customParams.tab
     : (selectedTab === "auto" ? currentTab : selectedTab);
 
+  // 初期モード（0: 1つの音 / 1: 2つの音をくらべる）
+  const cmpFlag = customParams.cmp !== undefined
+    ? String(customParams.cmp)
+    : (shareCompareModeSelect ? shareCompareModeSelect.value : "0");
+
   // 生徒画面で先生用設定をパスコード保護するかどうか（デフォルトON）
   const lockStudent = customParams.mode !== undefined
     ? customParams.mode === "student"
@@ -488,6 +501,9 @@ function generateStudentUrl(customParams = {}) {
 
   if (startTab && startTab !== "wave") {
     config.tab = startTab;
+  }
+  if (cmpFlag === "1") {
+    config.cmp = "1";
   }
   if (lockStudent) {
     config.mode = "student";
@@ -942,6 +958,12 @@ if (shareStartTabSelect) {
   });
 }
 
+if (shareCompareModeSelect) {
+  shareCompareModeSelect.addEventListener("change", () => {
+    updateShareUrlPreview();
+  });
+}
+
 if (chkShareStudentLock) {
   chkShareStudentLock.addEventListener("change", () => {
     updateShareUrlPreview();
@@ -964,10 +986,11 @@ function showShareQRCodeModal() {
   };
   const selectedTab = shareStartTabSelect ? shareStartTabSelect.value : "auto";
   const actualTab = selectedTab === "auto" ? currentTab : selectedTab;
+  const cmpLabel = (shareCompareModeSelect && shareCompareModeSelect.value === "1") ? "2つの音をくらべる" : "1つの音";
   const lockText = (!chkShareStudentLock || chkShareStudentLock.checked) ? "先生設定ロックON" : "ロックOFF";
 
   if (qrConfigSummary) {
-    qrConfigSummary.textContent = `画面: ${tabLabels[actualTab] || actualTab} / ゲイン ×${getGain().toFixed(1)} / 横 ${renderer.getHorizontalDivs()}マス / TIME ${renderer.timeDivMs.toFixed(1)}ms / VOLT ${renderer.voltsDiv.toFixed(1)}V / しきい値 ${Math.round(getNoiseGateThreshold())}% / ${lockText}`;
+    qrConfigSummary.textContent = `画面: ${tabLabels[actualTab] || actualTab}（${cmpLabel}） / ゲイン ×${getGain().toFixed(1)} / 横 ${renderer.getHorizontalDivs()}マス / TIME ${renderer.timeDivMs.toFixed(1)}ms / VOLT ${renderer.voltsDiv.toFixed(1)}V / しきい値 ${Math.round(getNoiseGateThreshold())}% / ${lockText}`;
   }
 
   if (window.drawQRCodeToCanvas && qrCanvas) {
@@ -1164,6 +1187,12 @@ function applyUrlParams() {
     }
   }
 
+  // 9. 初期測定モード指定 (cmp=1 で「2つの音をくらべる」を初期展開)
+  if (params.get("cmp") === "1") {
+    setCompareMode(true, true);
+    if (shareCompareModeSelect) shareCompareModeSelect.value = "1";
+  }
+
   // 生徒へのフィードバック（先生の指定設定で起動したことをわかりやすく通知）
   if (appliedItems.length > 0) {
     setTimeout(() => {
@@ -1172,12 +1201,87 @@ function applyUrlParams() {
   }
 }
 
-// 起動時のURLパラメータ適用とルーペ・プレビューURL初期化
+/**
+ * 「1つの音（標準）」／「2つの音をくらべる」モードをタブ1・タブ2連動で切り替える関数
+ * 【なぜ裏のデータを消さずに表示と有効範囲だけ切り替えるのか】
+ * 生徒が誤って「1つの音」へ戻しても、保存済みの音A・音Bデータを保護し、
+ * 再度比較モードを開いたときに実験を再開できるようにするため。
+ *
+ * @param {boolean} enabled - true: 2つの音をくらべる / false: 1つの音
+ * @param {boolean} [isInit=false] - 初期化時の呼び出しかどうか
+ */
+function setCompareMode(enabled, isInit = false) {
+  const next = !!enabled;
+
+  // 音Bを記録中・待機中に「1つの音」へ戻す場合は安全にキャンセル／確定
+  if (!next && typeof waveformRecorder !== "undefined") {
+    if (waveformRecorder.recordingState === "waiting_b") {
+      cancelRecordingSlot();
+    } else if (waveformRecorder.recordingState === "recording_b") {
+      stopRecordingSlot();
+    }
+  }
+
+  isCompareMode = next;
+
+  // トグルボタンのアクティブ表示同期
+  if (btnModeSingle) btnModeSingle.classList.toggle("active", !isCompareMode);
+  if (btnModeCompare) btnModeCompare.classList.toggle("active", isCompareMode);
+
+  // タブ1：比較パネル（音A/Bスロット・位相シフト）の表示切替
+  if (waveComparePanel) {
+    waveComparePanel.style.display = isCompareMode ? "" : "none";
+  }
+
+  // タブ1で「ピタッと停止」中に比較モードへ切り替えた場合は、停止中の波形を音Aへ自動引き継ぎ
+  if (!isInit && isCompareMode && isFrozen && renderer.frozenBuffer && !renderer.slotABuffer) {
+    renderer.setSlotA(renderer.frozenBuffer);
+    if (statusA) {
+      statusA.textContent = "保存済み";
+      statusA.style.color = "#3b82f6";
+    }
+    if (btnClearSlotA) btnClearSlotA.style.display = "flex";
+    if (btnSaveSlotA) {
+      btnSaveSlotA.textContent = "🔄 音Aを再保存";
+      const card = btnSaveSlotA.closest(".slot-card");
+      if (card) card.classList.add("has-data");
+    }
+  }
+
+  // タブ2：比較関連UI（音Bカード・上下/重ね切替・音B横位置ずらし・OSD）の表示切替
+  if (recSlotBCard) recSlotBCard.style.display = isCompareMode ? "" : "none";
+  if (recCompareModeGroup) recCompareModeGroup.style.display = isCompareMode ? "" : "none";
+  if (recOffsetGroup) recOffsetGroup.style.display = isCompareMode ? "" : "none";
+  if (osdRecMode) osdRecMode.style.display = isCompareMode ? "" : "none";
+  if (osdRecB) osdRecB.style.display = isCompareMode ? "" : "none";
+
+  if (recBadgeA) {
+    recBadgeA.textContent = isCompareMode ? "🔵 音A（基準）" : "🎙️ 音のきろく";
+  }
+
+  // 描画エンジンへモードを反映
+  renderer.setCompareEnabled(isCompareMode);
+  waveformRecorder.setCompareEnabled(isCompareMode);
+  if (isFrozen && renderer.frozenBuffer) {
+    renderer.render(renderer.frozenBuffer, true, 44100);
+  }
+  updateRecordingUI();
+}
+
+if (btnModeSingle) {
+  btnModeSingle.addEventListener("click", () => setCompareMode(false));
+}
+if (btnModeCompare) {
+  btnModeCompare.addEventListener("click", () => setCompareMode(true));
+}
+
+// 起動時のURLパラメータ適用とルーペ・モード・プレビューURL初期化
 waveformRecorder.setOscilloscopeScale({
   timeDivMs: renderer.timeDivMs,
   voltsDiv: renderer.voltsDiv,
   horizontalDivs: renderer.getHorizontalDivs()
 });
+setCompareMode(false, true);
 applyUrlParams();
 updateGateStatusUI(null);
 updateShareUrlPreview();
@@ -1501,11 +1605,11 @@ function exportImageWithMetadata(studentName, experimentCond) {
   exportCtx.fillStyle = currentTheme.osdColor;
   exportCtx.fillText(`🔬 実験条件: ${experimentCond}`, 20, line2Y);
 
-  // 比較情報の組み立て
+  // 比較情報の組み立て（2音比較モード時のみ出力）
   const hasA = !!renderer.slotABuffer;
   const hasB = !!renderer.slotBBuffer;
   let compareInfo = "";
-  if (hasA || hasB) {
+  if (isCompareMode && (hasA || hasB)) {
     const modeName = renderer.displayMode === "split" ? "上下並列" : "重ね合わせ";
     const phaseText = hasB ? ` | 位相: ${phaseValText.textContent}` : "";
     compareInfo = `[比較: ${modeName}${phaseText}] `;
@@ -1644,12 +1748,17 @@ function exportRecorderImageWithMetadata(studentName, experimentCond) {
 
   const durA = waveformRecorder.hasData("A") ? `${waveformRecorder.getDuration("A").toFixed(2)}s` : "未記録";
   const durB = waveformRecorder.hasData("B") ? `${waveformRecorder.getDuration("B").toFixed(2)}s` : "未記録";
-  const modeName = waveformRecorder.displayMode === "split" ? "上下並列" : "重ね合わせ";
-  const offsetSec = waveformRecorder.getSlotBOffsetSec();
-  const offsetSign = offsetSec > 0 ? "+" : "";
-  const offsetInfo = Math.abs(offsetSec) >= 0.005 ? ` [音B位置: ${offsetSign}${offsetSec.toFixed(2)}s]` : "";
   const loupeInfo = `[拡大: ${waveformRecorder.getInspectTime().toFixed(2)}s / 幅${waveformRecorder.getLoupeWindowMs().toFixed(1)}ms]`;
-  const recordInfo = `[まるごと波形: ${modeName}] [音A: ${durA}] [音B: ${durB}]${offsetInfo} ${loupeInfo}`;
+  let recordInfo = "";
+  if (isCompareMode) {
+    const modeName = waveformRecorder.displayMode === "split" ? "上下並列" : "重ね合わせ";
+    const offsetSec = waveformRecorder.getSlotBOffsetSec();
+    const offsetSign = offsetSec > 0 ? "+" : "";
+    const offsetInfo = Math.abs(offsetSec) >= 0.005 ? ` [音B位置: ${offsetSign}${offsetSec.toFixed(2)}s]` : "";
+    recordInfo = `[まるごと波形: ${modeName}] [音A: ${durA}] [音B: ${durB}]${offsetInfo} ${loupeInfo}`;
+  } else {
+    recordInfo = `[まるごと波形] [記録時間: ${durA}] ${loupeInfo}`;
+  }
   const infoWidth = exportCtx.measureText(recordInfo).width;
   exportCtx.fillText(recordInfo, exportCanvas.width - infoWidth - 20, line2Y);
 
@@ -1731,6 +1840,11 @@ function switchTab(targetTab) {
   sectionTuner.style.display = targetTab === "tuner" ? "flex" : "none";
   sectionGenerator.style.display = targetTab === "generator" ? "flex" : "none";
 
+  // 測定モード切替バーは「波形観察」と「まるごと波形きろく」タブでのみ表示
+  if (measureModeBar) {
+    measureModeBar.style.display = (targetTab === "wave" || targetTab === "record") ? "flex" : "none";
+  }
+
   // 波形タブまたは記録タブに戻ったときはCanvasのサイズを再計算
   if (targetTab === "wave") {
     renderer.handleResize();
@@ -1785,7 +1899,11 @@ function updateRecordingUI() {
   } else {
     btnRecordSlotA.classList.remove("recording", "waiting");
     recIconA.textContent = "🔴";
-    btnRecordSlotAText.textContent = waveformRecorder.hasData("A") ? "音Aを再記録" : "音Aのきろく開始";
+    if (isCompareMode) {
+      btnRecordSlotAText.textContent = waveformRecorder.hasData("A") ? "音Aを再記録" : "音Aのきろく開始";
+    } else {
+      btnRecordSlotAText.textContent = waveformRecorder.hasData("A") ? "🔄 録り直す" : "きろく開始";
+    }
     if (waveformRecorder.hasData("A")) {
       recStatusA.textContent = `${waveformRecorder.getDuration("A").toFixed(2)}秒 記録済み`;
       recStatusA.style.color = "#3b82f6";
@@ -1837,9 +1955,13 @@ function updateRecordingUI() {
 
   // --- OSD情報の更新 ---
   const hasA = waveformRecorder.hasData("A");
-  const hasB = waveformRecorder.hasData("B");
-  osdRecA.textContent = hasA ? `音A: ${waveformRecorder.getDuration("A").toFixed(2)}s` : "音A: 未記録";
-  osdRecB.textContent = hasB ? `音B: ${waveformRecorder.getDuration("B").toFixed(2)}s` : "音B: 未記録";
+  const hasB = isCompareMode && waveformRecorder.hasData("B");
+  if (isCompareMode) {
+    osdRecA.textContent = hasA ? `音A: ${waveformRecorder.getDuration("A").toFixed(2)}s` : "音A: 未記録";
+  } else {
+    osdRecA.textContent = hasA ? `きろく: ${waveformRecorder.getDuration("A").toFixed(2)}s` : "きろく: 未記録";
+  }
+  osdRecB.textContent = waveformRecorder.hasData("B") ? `音B: ${waveformRecorder.getDuration("B").toFixed(2)}s` : "音B: 未記録";
   osdRecMode.textContent = waveformRecorder.displayMode === "split" ? "モード: 上下に並べる" : "モード: 重ね合わせ";
 
   // ルーペ検査時刻バッジの同期
@@ -2033,7 +2155,7 @@ let recDragStartTime = 0;
 
 function updateLoupeTimeBadge() {
   if (!loupeTimeText) return;
-  const hasAny = waveformRecorder.hasData("A") || waveformRecorder.hasData("B");
+  const hasAny = waveformRecorder.hasData("A") || (isCompareMode && waveformRecorder.hasData("B"));
   loupeTimeText.textContent = hasAny ? `${waveformRecorder.getInspectTime().toFixed(2)}s` : "---";
 }
 
@@ -2210,8 +2332,9 @@ if (btnRecOffsetReset) {
 
 // まるごと波形きろくの画像保存ボタン
 btnSaveRecImage.addEventListener("click", () => {
-  if (!waveformRecorder.hasData("A") && !waveformRecorder.hasData("B")) {
-    alert("まず「音A」または「音B」の波形を記録してください。");
+  const hasVisibleData = waveformRecorder.hasData("A") || (isCompareMode && waveformRecorder.hasData("B"));
+  if (!hasVisibleData) {
+    alert(isCompareMode ? "まず「音A」または「音B」の波形を記録してください。" : "まず音の波形を記録してください。");
     return;
   }
   currentExportSource = "recorder";

@@ -38,8 +38,10 @@ export class OscilloscopeRenderer {
     this.frozenBuffer = null;
 
     // --- 波形比較（音A・音Bスロット）の管理 ---
-    // 【なぜ個別バッファとして保持するのか】
-    // 生徒が音Aと音Bをそれぞれ独立して何度でも録り直せるようにするため。
+    // 【なぜデフォルトを1つの音モード（compareEnabled = false）にするのか】
+    // 授業の導入や単一波形観察では音A/B比較UIを隠してシンプルに操作できるようにし、
+    // 比較実験のときだけ「2つの音をくらべる」へ切り替えて使えるようにするため。
+    this.compareEnabled = false;
     this.slotABuffer = null;
     this.slotBBuffer = null;
     this.displayMode = "overlay"; // "overlay"（重ね合わせ） または "split"（上下並列）
@@ -179,6 +181,18 @@ export class OscilloscopeRenderer {
    */
   getPhaseShiftSamples() {
     return this.phaseShiftSamples;
+  }
+
+  /**
+   * 「1つの音（false）」／「2つの音をくらべる（true）」の表示モードを切り替える
+   * 【なぜバッファを消さずにフラグだけ切り替えるのか】
+   * 誤って1つの音モードへ戻しても、保存済みの音A・音Bデータを裏で保護し、
+   * 再び比較モードへ戻したときにそのまま復元できるようにするため。
+   *
+   * @param {boolean} enabled
+   */
+  setCompareEnabled(enabled) {
+    this.compareEnabled = !!enabled;
   }
 
   /**
@@ -345,6 +359,28 @@ export class OscilloscopeRenderer {
     // 現在の有効なリアルタイム/一時停止バッファ
     const liveBuffer = this.isFrozen ? this.frozenBuffer : currentBuffer;
     const hasLiveSound = liveBuffer && (this.isFrozen || isAboveGate);
+
+    // ----------------------------------------------------------------------
+    // 描画モード 0: 【1つの音モード（デフォルト・シンプル観察）】
+    // ----------------------------------------------------------------------
+    if (!this.compareEnabled) {
+      this.drawGridArea(theme, 0, h, this.gridRows);
+      const pixelsPerVolt = (h / this.gridRows) / this.voltsDiv;
+      const centerY = h / 2;
+
+      if (hasLiveSound) {
+        this.drawWaveform(liveBuffer, centerY, pixelsPerVolt, samplesToDraw, 0, theme.waveMain, theme.waveMain, 2.5);
+      } else {
+        // 待機中（無音）の中心線
+        ctx.strokeStyle = theme.waveMain;
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.moveTo(0, centerY);
+        ctx.lineTo(w, centerY);
+        ctx.stroke();
+      }
+      return;
+    }
 
     // ----------------------------------------------------------------------
     // 描画モード A: 【上下に並べる（Split Mode）】

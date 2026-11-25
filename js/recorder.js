@@ -43,7 +43,8 @@ export class WaveformRecorder {
     // 最大録音時間（15秒：生徒端末のメモリ保護および十分な実験時間）
     this.maxRecordingDurationSec = 15;
 
-    // 比較表示モード: "split"（上下に並べる） または "overlay"（重ね合わせ）
+    // 比較表示モード: デフォルトは1つの音（compareEnabled = false）
+    this.compareEnabled = false;
     this.displayMode = "split";
 
     // --- 波形拡大ルーペ（2段表示）＆ 音B左右位置ずらし用パラメータ ---
@@ -258,7 +259,7 @@ export class WaveformRecorder {
    */
   getMaxDuration() {
     const durationA = this.slotAData ? this.slotAData.length / this.sampleRate : 0;
-    const durationB = this.slotBData ? this.slotBData.length / this.sampleRate : 0;
+    const durationB = (this.compareEnabled && this.slotBData) ? this.slotBData.length / this.sampleRate : 0;
     if (durationA === 0 && durationB === 0) return 0;
     return Math.max(2.0, Math.max(durationA, durationB));
   }
@@ -269,8 +270,17 @@ export class WaveformRecorder {
    */
   getMaxDataDuration() {
     const durationA = this.slotAData ? this.slotAData.length / this.sampleRate : 0;
-    const durationB = this.slotBData ? this.slotBData.length / this.sampleRate : 0;
+    const durationB = (this.compareEnabled && this.slotBData) ? this.slotBData.length / this.sampleRate : 0;
     return Math.max(durationA, durationB);
+  }
+
+  /**
+   * 「1つの音（false）」／「2つの音をくらべる（true）」モードを切り替えて再描画する
+   * @param {boolean} enabled
+   */
+  setCompareEnabled(enabled) {
+    this.compareEnabled = !!enabled;
+    this.draw();
   }
 
   /**
@@ -451,7 +461,7 @@ export class WaveformRecorder {
     this.ctx.fillRect(0, 0, w, h);
 
     const hasA = !!this.slotAData;
-    const hasB = !!this.slotBData;
+    const hasB = this.compareEnabled && !!this.slotBData;
 
     // データが何もない場合のガイド表示
     if (!hasA && !hasB) {
@@ -465,7 +475,7 @@ export class WaveformRecorder {
       // 検査時刻が現在のデータ最大長を超えていた場合は安全に丸める
       const maxDataDur = Math.max(durationA, durationB);
       if (this.inspectTimeSec > maxDataDur) {
-        this.inspectTimeSec = this.findPeakTime(this.slotAData || this.slotBData);
+        this.inspectTimeSec = this.findPeakTime(this.slotAData || (hasB ? this.slotBData : null));
       }
 
       // 2段構成のレイアウト計算: 上段＝全体波形（減衰確認）、下段＝波形拡大ルーペ（波の形確認）
@@ -476,7 +486,22 @@ export class WaveformRecorder {
       // ------------------------------------------------------------------
       // 上段: 全体波形（減衰カーブ表示エリア）
       // ------------------------------------------------------------------
-      if (this.displayMode === "split" && hasA && hasB) {
+      if (!this.compareEnabled) {
+        // --- 1つの音モード（シンプル単独表示） ---
+        this.drawSingleSlotTrack({
+          x: 0,
+          y: 0,
+          width: w,
+          height: overviewH,
+          data: this.slotAData,
+          duration: durationA,
+          maxDuration: maxDuration,
+          title: "🎙️ きろく波形",
+          color: theme.waveMain,
+          theme: theme,
+          showTimeline: true
+        });
+      } else if (this.displayMode === "split" && hasA && hasB) {
         // --- 上下に並べて比較モード ---
         const halfOverviewH = Math.floor(overviewH / 2);
 
@@ -530,7 +555,7 @@ export class WaveformRecorder {
           width: w,
           height: overviewH,
           dataA: this.slotAData,
-          dataB: this.slotBData,
+          dataB: hasB ? this.slotBData : null,
           durationA: durationA,
           durationB: durationB,
           maxDuration: maxDuration,
@@ -560,17 +585,17 @@ export class WaveformRecorder {
         width: w,
         height: loupeH,
         dataA: this.slotAData,
-        dataB: this.slotBData,
+        dataB: hasB ? this.slotBData : null,
         theme: theme
       });
     }
 
     // 待機中・録音中のステータスバナー（Canvas下部に控えめに重ねて状態を明示）
     if (this.recordingState === "waiting_a" || this.recordingState === "waiting_b") {
-      const targetName = this.recordingState === "waiting_a" ? "音A" : "音B";
+      const targetName = !this.compareEnabled ? "音" : (this.recordingState === "waiting_a" ? "音A" : "音B");
       this.drawStatusOverlay(w, h, `⏳ ${targetName}の入力を待っています…（赤い線より大きい音を鳴らすと記録スタート）`, "#f59e0b");
     } else if (this.recordingState === "recording_a" || this.recordingState === "recording_b") {
-      const targetName = this.recordingState === "recording_a" ? "音A" : "音B";
+      const targetName = !this.compareEnabled ? "音" : (this.recordingState === "recording_a" ? "音A" : "音B");
       this.drawStatusOverlay(w, h, `🔴 ${targetName}を記録中…（もう一度ボタンを押すと完了します）`, "#ef4444");
     }
   }
@@ -624,7 +649,10 @@ export class WaveformRecorder {
       this.ctx.fillStyle = "rgba(100, 116, 139, 0.85)";
       this.ctx.fillText("下のスライダーで反応する音の大きさ（赤い線）を調整できます", w / 2, h / 2 + 16);
     } else {
-      this.ctx.fillText("「🔴 音Aのきろく開始」ボタンを押して音を鳴らしてください", w / 2, h / 2 - 12);
+      const startLabel = this.compareEnabled
+        ? "「🔴 音Aのきろく開始」ボタンを押して音を鳴らしてください"
+        : "「🔴 きろく開始」ボタンを押して音を鳴らしてください";
+      this.ctx.fillText(startLabel, w / 2, h / 2 - 12);
       this.ctx.font = "13px sans-serif";
       this.ctx.fillStyle = "rgba(100, 116, 139, 0.8)";
       this.ctx.fillText("しきい値以上の音を検知した瞬間から、全体の音の波形が記録されます", w / 2, h / 2 + 16);
@@ -925,8 +953,9 @@ export class WaveformRecorder {
     // --- 4. 音A・音Bのミクロ波形描画（タブ1の VOLTS/DIV と横時間幅を完全適用） ---
     // 縦8マス換算で pixelsPerVolt を算出（タブ1と同じ画面比率で振幅を表示）
     const pixelsPerVolt = (height / rows) / this.voltsDiv;
+    const waveAColor = this.compareEnabled ? "#3b82f6" : theme.waveMain;
     if (dataA) {
-      this.drawLoupeWaveform(x, y, width, height, dataA, "#3b82f6", 2.2, pixelsPerVolt, 0);
+      this.drawLoupeWaveform(x, y, width, height, dataA, waveAColor, 2.2, pixelsPerVolt, 0);
     }
     if (dataB) {
       this.drawLoupeWaveform(x, y, width, height, dataB, "#ef4444", 2.2, pixelsPerVolt, this.slotBOffsetSec);
